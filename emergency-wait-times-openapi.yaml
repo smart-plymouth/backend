@@ -1,0 +1,169 @@
+openapi: 3.0.3
+info:
+  title: Emergency Department Wait Times API
+  description: |
+    API providing live and historical emergency department, urgent treatment centre,
+    and minor injury unit wait times for the Plymouth area.
+  version: "1.0"
+  contact:
+    name: SmartPlymouth
+servers:
+  - url: https://api.smartplymouth.org/api/emergency-wait-times/v1.0
+    description: Production
+
+paths:
+  /locations:
+    get:
+      summary: List all locations
+      description: Returns all emergency care locations including their address, coordinates, and contact details.
+      operationId: listLocations
+      tags:
+        - Locations
+      responses:
+        "200":
+          description: A list of locations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Location"
+
+  /locations/{location_id}:
+    get:
+      summary: Get a single location
+      description: Returns details for a specific location by its UUID.
+      operationId: getLocation
+      tags:
+        - Locations
+      parameters:
+        - $ref: "#/components/parameters/LocationId"
+      responses:
+        "200":
+          description: Location details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Location"
+        "404":
+          description: Location not found
+
+  /locations/{location_id}/wait-times:
+    get:
+      summary: List wait times for a location
+      description: |
+        Returns the most recent wait time records for a given location,
+        ordered by timestamp descending. Limited to the latest 100 entries.
+      operationId: listWaitTimes
+      tags:
+        - Wait Times
+      parameters:
+        - $ref: "#/components/parameters/LocationId"
+      responses:
+        "200":
+          description: A list of wait time records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WaitTime"
+        "404":
+          description: Location not found
+
+components:
+  parameters:
+    LocationId:
+      name: location_id
+      in: path
+      required: true
+      description: UUID of the location
+      schema:
+        type: string
+        format: uuid
+        example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+  schemas:
+    Location:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the location
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        name:
+          type: string
+          description: Name of the location
+          example: "Emergency Department"
+        type:
+          type: string
+          enum:
+            - emergency_department
+            - urgent_treatment_centre
+            - minor_injuries_unit
+          description: Type of urgent care facility
+          example: "emergency_department"
+        address:
+          type: string
+          description: Full postal address
+          example: "Derriford Hospital, Derriford Rd, Crownhill, Plymouth PL6 8DH"
+        longitude:
+          type: number
+          format: double
+          description: Longitude coordinate
+          example: 50.41711142234749
+        latitude:
+          type: number
+          format: double
+          description: Latitude coordinate
+          example: -4.113110116204163
+        opening_times:
+          type: string
+          nullable: true
+          description: Opening hours description
+          example: "24/7"
+        telephone_number:
+          type: string
+          nullable: true
+          description: Contact telephone number
+          example: "01752202082"
+      required:
+        - id
+        - name
+        - type
+        - address
+        - longitude
+        - latitude
+
+    WaitTime:
+      type: object
+      properties:
+        location_id:
+          type: string
+          format: uuid
+          description: UUID of the associated location
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of when the data was recorded
+          example: "2025-05-28T20:40:00+00:00"
+        longest_wait:
+          type: integer
+          description: Longest current wait time in minutes
+          example: 467
+        patients_waiting:
+          type: integer
+          description: Number of patients currently waiting to be seen
+          example: 72
+        patients_in_department:
+          type: integer
+          description: Total number of patients currently in the department
+          example: 136
+      required:
+        - location_id
+        - timestamp
+        - longest_wait
+        - patients_waiting
+        - patients_in_department
