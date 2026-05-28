@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 
 import requests
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup
 
 from app.celery_app import celery
 
@@ -21,64 +21,40 @@ HEADING_TO_LOCATION = {
 WAIT_TIMES_URL = "https://www.plymouthhospitals.nhs.uk/urgent-waiting-times/"
 
 
-def _parse_int(text):
-    """Extract the first integer from a string, return 0 if none found."""
-    match = re.search(r"(\d+)", text)
-    return int(match.group(1)) if match else 0
-
-
-def _get_section_html(full_html, heading_text, all_headings, index):
-    """
-    Extract the raw HTML between this heading and the next known heading.
-    This avoids DOM traversal issues by working with the raw HTML string.
-    """
-    # Find the position of this heading in the HTML
-    # Use a pattern that matches the h2 containing this text
-    heading_pattern = re.compile(
-        r"<h2[^>]*>.*?" + re.escape(heading_text) + r".*?</h2>",
-        re.DOTALL | re.IGNORECASE,
-    )
-    match = heading_pattern.search(full_html)
-    if not match:
-        return ""
-
-    start_pos = match.end()
-
-    # Find the position of the next heading
-    end_pos = len(full_html)
-    if index + 1 < len(all_headings):
-        next_heading_text = all_headings[index + 1]
-        next_pattern = re.compile(
-            r"<h2[^>]*>.*?" + re.escape(next_heading_text) + r".*?</h2>",
-            re.DOTALL | re.IGNORECASE,
-        )
-        next_match = next_pattern.search(full_html, start_pos)
-        if next_match:
-            end_pos = next_match.start()
-
-    return full_html[start_pos:end_pos]
-
-
 def _parse_page(html):
     """Parse the wait times page and return a list of dicts with location data."""
     soup = BeautifulSoup(html, "html.parser")
     results = []
 
-    # Determine which headings are present on the page
+    # Find all h2 tags and identify the ones matching our locations
     all_h2 = soup.find_all("h2")
-    found_headings = []
+    location_h2s = []
     for h2 in all_h2:
         text = h2.get_text(strip=True)
         if text in HEADING_TO_LOCATION:
-            found_headings.append(text)
+            location_h2s.append(h2)
 
-    for i, heading_text in enumerate(found_headings):
-        # Extract the HTML section for this location
-        section_html = _get_section_html(html, heading_text, found_headings, i)
+    for i, h2 in enumerate(location_h2s):
+        heading_text = h2.get_text(strip=True)
 
-        # Get plain text from the section HTML
-        section_soup = BeautifulSoup(section_html, "html.parser")
-        section_text = section_soup.get_text(" ", strip=True)
+        # Collect all text content between this h2 and the next location h2
+        # by walking through elements in document order
+        texts = []
+        node = h2.next_element
+
+        # Determine the stop node (next location h2 or end)
+        stop_node = location_h2s[i + 1] if i + 1 < len(location_h2s) else None
+
+        while node:
+            if node is stop_node:
+                break
+            if isinstance(node, str):
+                stripped = node.strip()
+                if stripped:
+                    texts.append(stripped)
+            node = node.next_element
+
+        section_text = " ".join(texts)
 
         # Parse stats using regex on the section text
         # Pattern: number followed by "minutes" (with possible whitespace)
