@@ -258,3 +258,29 @@ spec:
   ports:
     - port: 5555
       targetPort: 5555
+
+---
+# Database Migration Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  namespace: smartplymouth
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: db-migrate
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: registry.robertputt.technology/smartplymouth/backend:latest
+          imagePullPolicy: Always
+          env:
+            - name: DATABASE_URL
+              value: postgresql://postgres:postgres@postgres:5432/smartplymouth
+          command: ["alembic", "upgrade", "head"]
