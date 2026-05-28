@@ -252,7 +252,7 @@ metadata:
   name: celery-flower
   namespace: smartplymouth
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     app: celery-flower
   ports:
