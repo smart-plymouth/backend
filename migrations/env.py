@@ -9,6 +9,7 @@ from sqlalchemy import engine_from_config, pool
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app import db  # noqa: E402
+from app.blueprints.emergency_wait_times.models import Location, WaitTime  # noqa: E402, F401
 
 config = context.config
 
