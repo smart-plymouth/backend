@@ -19,16 +19,29 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create location_type enum
+    # Conditionally create the enum type (safe if it already exists)
+    op.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'location_type') THEN
+                CREATE TYPE location_type AS ENUM (
+                    'emergency_department',
+                    'urgent_treatment_centre',
+                    'minor_injuries_unit'
+                );
+            END IF;
+        END$$;
+    """)
+
+    # Create locations table - use create_type=False since we handle the enum above
     location_type_enum = sa.Enum(
         "emergency_department",
         "urgent_treatment_centre",
         "minor_injuries_unit",
         name="location_type",
+        create_type=False,
     )
-    location_type_enum.create(op.get_bind(), checkfirst=True)
 
-    # Create locations table
     op.create_table(
         "ed_wait_times_locations",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
