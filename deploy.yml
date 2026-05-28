@@ -260,6 +260,38 @@ spec:
       targetPort: 5555
 
 ---
+# Celery Beat Deployment (scheduler)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+  namespace: smartplymouth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-beat
+  template:
+    metadata:
+      labels:
+        app: celery-beat
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      containers:
+        - name: celery-beat
+          image: registry.robertputt.technology/smartplymouth/backend:latest
+          imagePullPolicy: Always
+          env:
+            - name: DATABASE_URL
+              value: postgresql://postgres:postgres@postgres:5432/smartplymouth
+            - name: CELERY_BROKER_URL
+              value: redis://redis:6379/0
+            - name: CELERY_RESULT_BACKEND
+              value: redis://redis:6379/0
+          command: ["celery", "-A", "app.celery_app.celery", "beat", "--loglevel=info"]
+
+---
 # Database Migration Job
 apiVersion: batch/v1
 kind: Job
