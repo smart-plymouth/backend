@@ -1,4 +1,5 @@
 from flask import Flask
+from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
@@ -9,6 +10,7 @@ def create_app():
     app.config.from_object("app.config.Config")
 
     db.init_app(app)
+    CORS(app)
 
     # Register blueprints
     from app.blueprints.test_api import test_api_bp
