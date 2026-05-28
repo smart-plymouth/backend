@@ -33,20 +33,24 @@ def upgrade() -> None:
         END$$;
     """)
 
-    # Create locations table - use create_type=False since we handle the enum above
-    location_type_enum = sa.Enum(
-        "emergency_department",
-        "urgent_treatment_centre",
-        "minor_injuries_unit",
-        name="location_type",
-        create_type=False,
-    )
-
+    # Create locations table - use sa.text() with a raw type to avoid SQLAlchemy
+    # trying to re-create the enum via the before_create event
     op.create_table(
         "ed_wait_times_locations",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("type", location_type_enum, nullable=False),
+        sa.Column(
+            "type",
+            sa.Enum(
+                "emergency_department",
+                "urgent_treatment_centre",
+                "minor_injuries_unit",
+                name="location_type",
+                create_constraint=False,
+                native_enum=False,
+            ),
+            nullable=False,
+        ),
         sa.Column("address", sa.Text, nullable=False),
         sa.Column("longitude", sa.Float, nullable=False),
         sa.Column("latitude", sa.Float, nullable=False),

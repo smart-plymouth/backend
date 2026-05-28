@@ -15,6 +15,7 @@ class Location(db.Model):
             "urgent_treatment_centre",
             "minor_injuries_unit",
             name="location_type",
+            create_type=False,
         ),
         nullable=False,
     )
