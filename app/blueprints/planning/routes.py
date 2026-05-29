@@ -72,8 +72,6 @@ def list_cases():
     })
 
 
-'''
-We only enable this route if we want to force flush old weeks.
 @planning_bp.route("/fetch", methods=["POST"])
 def trigger_fetch():
     """Trigger a task to fetch planning validations for a given week.
@@ -104,7 +102,6 @@ def trigger_fetch():
         "task_id": task.id,
         "week_start": week_monday.isoformat(),
     }), 202
-'''
 
 
 @planning_bp.route("/cases/<path:reference>", methods=["GET"])
