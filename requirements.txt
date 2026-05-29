@@ -14,3 +14,4 @@ langchain==0.3.25
 langchain-ollama==0.3.3
 langchain-core==0.3.60
 pypdf==5.4.0
+cryptography==44.0.3
