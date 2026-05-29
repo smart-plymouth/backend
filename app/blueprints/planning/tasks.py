@@ -590,7 +590,7 @@ def _run_ai_analysis(metadata, document_texts, reference):
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", (
-            "You are an expert planning analyst for Plymouth City Council. "
+            "You are an expert planning analyst. "
             "Analyse the following planning application and provide a structured assessment. "
             "You must respond with ONLY valid JSON, no other text or explanation.\n\n"
             "The JSON must have exactly these fields:\n"
@@ -707,7 +707,7 @@ def _generate_objections(metadata, document_texts, reference, analysis):
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", (
-            "You are an expert planning analyst for Plymouth City Council. "
+            "You are an expert planning analyst. "
             "A planning application has been assessed with a high impact or size score. "
             "Your task is to identify potential legitimate grounds for objection that "
             "members of the public or community groups might raise.\n\n"
