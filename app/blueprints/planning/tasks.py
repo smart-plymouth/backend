@@ -687,7 +687,7 @@ def _run_ai_analysis(metadata, document_texts, reference):
 def _generate_objections(metadata, document_texts, reference, analysis):
     """Generate potential reasons for objection using AI.
 
-    Only called when impact or size score is 5 or greater.
+    Only called when impact or size score is 3 or greater.
     Returns a list of dicts with 'objection' and 'ai_rationalisation' keys.
     """
     from langchain_ollama import OllamaLLM
@@ -912,9 +912,9 @@ def analyse_planning_application(reference):
             case.ai_rationalisation = analysis["ai_rationalisation"]
             db.session.commit()
 
-            # Step 8: Generate potential objections if impact or size >= 5
+            # Step 8: Generate potential objections if impact or size >= 3
             objections_generated = 0
-            if analysis["potential_impact_score"] >= 5 or analysis["estimated_size"] >= 5:
+            if analysis["potential_impact_score"] >= 3 or analysis["estimated_size"] >= 3:
                 from app.blueprints.planning.models import PlanningObjection
 
                 logger.info(
