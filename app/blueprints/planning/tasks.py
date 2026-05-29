@@ -201,6 +201,7 @@ def fetch_weekly_planning_applications(week_start_iso=None):
         )
 
         session = requests.Session()
+        session.verify = False
         session.headers.update({
             "User-Agent": (
                 "SmartPlymouth/1.0 "
