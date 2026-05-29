@@ -12,5 +12,5 @@ requests==2.32.3
 beautifulsoup4==4.12.3
 langchain==0.3.25
 langchain-ollama==0.3.3
-langchain-core==0.3.59
+langchain-core==0.3.60
 pypdf==5.4.0
