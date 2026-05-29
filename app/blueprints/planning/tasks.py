@@ -361,22 +361,40 @@ def _get_application_key_val(reference, session):
     """Search for a planning application and extract its internal keyVal ID.
 
     The Idox system uses an internal keyVal parameter to identify applications.
-    We need to load the search form first to establish a session, then submit
-    the search to get results.
+    We need to load the search form first to establish a session, extract the
+    CSRF token, then POST the search to get results.
     """
     import re
+    from urllib.parse import quote
 
-    # Step 1: Load the simple search form to establish session cookie
+    # Step 1: Load the simple search form to establish session cookie and get CSRF
     form_url = f"{PLANNING_APP_BASE_URL}search.do?action=simple"
     form_response = session.get(form_url, timeout=30)
     form_response.raise_for_status()
 
-    # Step 2: Submit the search with the reference number
-    search_url = (
-        f"{PLANNING_APP_BASE_URL}simpleSearchResults.do"
-        f"?action=firstPage&searchCriteria.reference={reference}"
+    # Step 2: Extract CSRF token
+    soup = BeautifulSoup(form_response.text, "html.parser")
+    csrf_input = soup.find("input", {"name": "_csrf"})
+    csrf_token = csrf_input["value"] if csrf_input else ""
+
+    # Step 3: Submit the search as a POST with form data
+    form_data = {
+        "_csrf": csrf_token,
+        "searchCriteria.reference": reference,
+        "searchCriteria.planningPortalReference": "",
+        "searchCriteria.alternativeReference": "",
+        "searchType": "Application",
+    }
+
+    response = session.post(
+        f"{PLANNING_APP_BASE_URL}simpleSearchResults.do?action=firstPage",
+        data=form_data,
+        headers={
+            "Referer": form_url,
+            "Origin": "https://planning.plymouth.gov.uk",
+        },
+        timeout=30,
     )
-    response = session.get(search_url, timeout=30)
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
