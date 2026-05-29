@@ -1,0 +1,215 @@
+openapi: 3.0.3
+info:
+  title: Planning Applications API
+  description: |
+    API providing planning application case data for the Plymouth area,
+    sourced from Plymouth City Council's public planning portal.
+  version: "1.0"
+  contact:
+    name: SmartPlymouth
+servers:
+  - url: https://api.smartplymouth.org/api/planning/v1.0
+    description: Production
+
+paths:
+  /cases:
+    get:
+      summary: List planning cases
+      description: |
+        Returns a paginated list of planning cases with optional filtering
+        by status and/or received (submission) date.
+      operationId: listCases
+      tags:
+        - Cases
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by application status (partial, case-insensitive match).
+          schema:
+            type: string
+            example: "Awaiting decision"
+        - name: received_date
+          in: query
+          required: false
+          description: |
+            Filter to an exact received (submission) date. YYYY-MM-DD format.
+            Mutually exclusive with received_from/received_to.
+          schema:
+            type: string
+            format: date
+            example: "2026-05-22"
+        - name: received_from
+          in: query
+          required: false
+          description: |
+            Start of received date range filter (inclusive). YYYY-MM-DD format.
+            Ignored if received_date is provided.
+          schema:
+            type: string
+            format: date
+            example: "2026-05-18"
+        - name: received_to
+          in: query
+          required: false
+          description: |
+            End of received date range filter (inclusive). YYYY-MM-DD format.
+            Ignored if received_date is provided.
+          schema:
+            type: string
+            format: date
+            example: "2026-05-24"
+        - name: page
+          in: query
+          required: false
+          description: Page number (1-indexed).
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+            example: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100).
+          schema:
+            type: integer
+            default: 25
+            minimum: 1
+            maximum: 100
+            example: 25
+      responses:
+        "200":
+          description: A paginated list of planning cases
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedCases"
+        "400":
+          description: Invalid date format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /cases/{reference}:
+    get:
+      summary: Get a single planning case
+      description: |
+        Returns details for a specific planning case by its reference number.
+        The reference contains forward slashes (e.g. 26/00747/CDM).
+      operationId: getCase
+      tags:
+        - Cases
+      parameters:
+        - $ref: "#/components/parameters/CaseReference"
+      responses:
+        "200":
+          description: Planning case details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanningCase"
+        "404":
+          description: Case not found
+
+components:
+  parameters:
+    CaseReference:
+      name: reference
+      in: path
+      required: true
+      description: |
+        The planning application reference number (e.g. 26/00747/CDM).
+        Contains forward slashes.
+      schema:
+        type: string
+        example: "26/00747/CDM"
+
+  schemas:
+    PlanningCase:
+      type: object
+      properties:
+        reference:
+          type: string
+          description: Unique planning application reference number
+          example: "26/00747/CDM"
+        address:
+          type: string
+          description: Site address for the application
+          example: "46 - 48 Devonport Road Plymouth PL3 4DH"
+        proposal:
+          type: string
+          description: Description of the proposed development
+          example: "Change of use from offices to four houses in multiple occupation (Class C4)"
+        status:
+          type: string
+          description: Current status of the application
+          example: "Awaiting decision"
+        received_date:
+          type: string
+          format: date
+          nullable: true
+          description: Date the application was received (YYYY-MM-DD)
+          example: "2026-05-22"
+        validated_date:
+          type: string
+          format: date
+          nullable: true
+          description: Date the application was validated (YYYY-MM-DD)
+          example: "2026-05-22"
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the record was first stored
+          example: "2026-05-23T07:00:12+00:00"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the record was last updated
+          example: "2026-05-23T07:00:12+00:00"
+      required:
+        - reference
+        - address
+        - proposal
+        - status
+
+    PaginatedCases:
+      type: object
+      properties:
+        cases:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanningCase"
+        total:
+          type: integer
+          description: Total number of matching cases
+          example: 45
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        pages:
+          type: integer
+          description: Total number of pages
+          example: 2
+        per_page:
+          type: integer
+          description: Results per page
+          example: 25
+      required:
+        - cases
+        - total
+        - page
+        - pages
+        - per_page
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "Invalid received_date format. Use YYYY-MM-DD."
+      required:
+        - error
