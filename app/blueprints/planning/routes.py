@@ -72,13 +72,6 @@ def list_cases():
     })
 
 
-@planning_bp.route("/cases/<string:reference>", methods=["GET"])
-def get_case(reference):
-    """Get a single planning case by reference number."""
-    case = PlanningCase.query.get_or_404(reference)
-    return jsonify(case.to_dict())
-
-
 @planning_bp.route("/fetch", methods=["POST"])
 def trigger_fetch():
     """Trigger a task to fetch planning validations for a given week.
@@ -109,3 +102,14 @@ def trigger_fetch():
         "task_id": task.id,
         "week_start": week_monday.isoformat(),
     }), 202
+
+
+@planning_bp.route("/cases/<path:reference>", methods=["GET"])
+def get_case(reference):
+    """Get a single planning case by reference number.
+
+    The reference contains forward slashes (e.g. 26/00747/CDM) so we use
+    a path converter to capture the full value.
+    """
+    case = PlanningCase.query.get_or_404(reference)
+    return jsonify(case.to_dict())
