@@ -598,7 +598,11 @@ def _run_ai_analysis(metadata, document_texts, reference):
             "- estimated_size: integer 1-10 (1=very small e.g. minor alteration, 10=massive e.g. large housing estate)\n"
             "- tags: array of lowercase string tags describing the application "
             "(e.g. residential, commercial, change-of-use, demolition, new-build, extension, "
-            "listed-building, conservation-area, HMO, retail, industrial, infrastructure)\n\n"
+            "listed-building, conservation-area, HMO, retail, industrial, infrastructure)\n"
+            "- rationalisation: a string containing several paragraphs explaining WHY you "
+            "chose the given impact score and size score. Justify your reasoning by referencing "
+            "specific details from the application metadata and documents. Explain what factors "
+            "led to the scores and why they are appropriate for this type of application.\n\n"
             "## Scoring Rules (you MUST follow these strictly):\n\n"
             "### Minor homeowner changes (extensions, loft conversions, garages, porches, "
             "alterations to a single existing dwelling):\n"
@@ -662,11 +666,15 @@ def _run_ai_analysis(metadata, document_texts, reference):
         if not isinstance(tags, list):
             tags = []
         tags = [str(t).lower().strip() for t in tags if t]
+        rationalisation = result.get("rationalisation", "")
+        if not isinstance(rationalisation, str):
+            rationalisation = str(rationalisation)
 
         return {
             "potential_impact_score": impact_score,
             "estimated_size": size,
             "tags": tags,
+            "ai_rationalisation": rationalisation,
         }
     except (json.JSONDecodeError, ValueError, KeyError) as e:
         logger.error(f"Failed to parse AI response for {reference}: {e}")
@@ -795,6 +803,7 @@ def analyse_planning_application(reference):
             case.potential_impact_score = analysis["potential_impact_score"]
             case.estimated_size = analysis["estimated_size"]
             case.tags = analysis["tags"]
+            case.ai_rationalisation = analysis["ai_rationalisation"]
             db.session.commit()
 
             logger.info(

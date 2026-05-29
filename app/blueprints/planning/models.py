@@ -14,6 +14,7 @@ class PlanningCase(db.Model):
     potential_impact_score = db.Column(db.Integer, nullable=True)
     tags = db.Column(db.JSON, nullable=True)
     estimated_size = db.Column(db.Integer, nullable=True)
+    ai_rationalisation = db.Column(db.UnicodeText, nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True), server_default=db.func.now(), nullable=False
     )
@@ -40,6 +41,7 @@ class PlanningCase(db.Model):
             "potential_impact_score": self.potential_impact_score,
             "tags": self.tags,
             "estimated_size": self.estimated_size,
+            "ai_rationalisation": self.ai_rationalisation,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
