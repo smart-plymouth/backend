@@ -29,32 +29,32 @@ paths:
           schema:
             type: string
             example: "Awaiting decision"
-        - name: received_date
+        - name: validated_date
           in: query
           required: false
           description: |
-            Filter to an exact received (submission) date. YYYY-MM-DD format.
-            Mutually exclusive with received_from/received_to.
+            Filter to an exact validated date. YYYY-MM-DD format.
+            Mutually exclusive with validated_from/validated_to.
           schema:
             type: string
             format: date
             example: "2026-05-22"
-        - name: received_from
+        - name: validated_from
           in: query
           required: false
           description: |
-            Start of received date range filter (inclusive). YYYY-MM-DD format.
-            Ignored if received_date is provided.
+            Start of validated date range filter (inclusive). YYYY-MM-DD format.
+            Ignored if validated_date is provided.
           schema:
             type: string
             format: date
             example: "2026-05-18"
-        - name: received_to
+        - name: validated_to
           in: query
           required: false
           description: |
-            End of received date range filter (inclusive). YYYY-MM-DD format.
-            Ignored if received_date is provided.
+            End of validated date range filter (inclusive). YYYY-MM-DD format.
+            Ignored if validated_date is provided.
           schema:
             type: string
             format: date
