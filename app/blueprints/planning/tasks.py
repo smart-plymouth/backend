@@ -684,6 +684,110 @@ def _run_ai_analysis(metadata, document_texts, reference):
         return None
 
 
+def _generate_objections(metadata, document_texts, reference, analysis):
+    """Generate potential reasons for objection using AI.
+
+    Only called when impact or size score is 5 or greater.
+    Returns a list of dicts with 'objection' and 'ai_rationalisation' keys.
+    """
+    from langchain_ollama import OllamaLLM
+    from langchain_core.prompts import ChatPromptTemplate
+
+    llm = OllamaLLM(
+        model=Config.OLLAMA_MODEL,
+        base_url=Config.OLLAMA_BASE_URL,
+        temperature=0.2,
+    )
+
+    metadata_text = "\n".join(f"- {k}: {v}" for k, v in metadata.items())
+
+    combined_docs = "\n\n---\n\n".join(document_texts[:10])
+    if len(combined_docs) > 15000:
+        combined_docs = combined_docs[:15000] + "\n\n[... truncated ...]"
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", (
+            "You are an expert planning analyst for Plymouth City Council. "
+            "A planning application has been assessed with a high impact or size score. "
+            "Your task is to identify potential legitimate grounds for objection that "
+            "members of the public or community groups might raise.\n\n"
+            "You must respond with ONLY valid JSON, no other text or explanation.\n\n"
+            "The JSON must be an array of objects, each with exactly these fields:\n"
+            "- objection: a concise statement of the grounds for objection "
+            "(e.g. 'Increased traffic congestion on residential streets')\n"
+            "- ai_rationalisation: one or two paragraphs explaining WHY this is a "
+            "valid potential objection, referencing specific details from the application "
+            "metadata and documents. Explain what evidence supports this concern.\n\n"
+            "## Guidelines:\n"
+            "- Only include legitimate planning grounds for objection (not personal preferences)\n"
+            "- Valid grounds include: traffic/parking impact, overlooking/privacy, "
+            "noise/disturbance, visual impact, loss of light, impact on conservation areas, "
+            "flood risk, strain on local infrastructure, loss of green space, "
+            "overdevelopment, impact on wildlife/ecology, heritage concerns, "
+            "inadequate amenity space, out of character with area\n"
+            "- Do NOT include objections based on: property values, competition with "
+            "existing businesses, personal disputes, or loss of private views\n"
+            "- Provide between 1 and 5 objections depending on the complexity of the application\n"
+            "- Each objection should be distinct and address a different concern\n"
+        )),
+        ("human", (
+            "Planning Application Reference: {reference}\n\n"
+            "## AI Assessment\n"
+            "- Impact Score: {impact_score}/10\n"
+            "- Size Score: {size_score}/10\n"
+            "- Tags: {tags}\n\n"
+            "## Application Metadata\n{metadata}\n\n"
+            "## Document Contents\n{documents}\n\n"
+            "Provide potential grounds for objection as a JSON array."
+        )),
+    ])
+
+    chain = prompt | llm
+
+    try:
+        response = chain.invoke({
+            "reference": reference,
+            "impact_score": analysis["potential_impact_score"],
+            "size_score": analysis["estimated_size"],
+            "tags": ", ".join(analysis["tags"]),
+            "metadata": metadata_text,
+            "documents": combined_docs if combined_docs else "No documents available.",
+        })
+
+        response_text = response.strip()
+        # Remove markdown code fences if present
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            response_text = "\n".join(lines)
+
+        # Extract JSON array from response
+        json_start = response_text.find("[")
+        json_end = response_text.rfind("]") + 1
+        if json_start != -1 and json_end > json_start:
+            response_text = response_text[json_start:json_end]
+
+        objections = json.loads(response_text)
+
+        if not isinstance(objections, list):
+            logger.error(f"Objections response is not a list for {reference}")
+            return []
+
+        valid_objections = []
+        for obj in objections:
+            if isinstance(obj, dict) and "objection" in obj and "ai_rationalisation" in obj:
+                valid_objections.append({
+                    "objection": str(obj["objection"]).strip(),
+                    "ai_rationalisation": str(obj["ai_rationalisation"]).strip(),
+                })
+
+        return valid_objections
+
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        logger.error(f"Failed to parse objections response for {reference}: {e}")
+        return []
+
+
 @celery.task(queue="planning_analysis")
 def analyse_planning_application(reference):
     """Analyse a planning application using AI.
@@ -808,6 +912,42 @@ def analyse_planning_application(reference):
             case.ai_rationalisation = analysis["ai_rationalisation"]
             db.session.commit()
 
+            # Step 8: Generate potential objections if impact or size >= 5
+            objections_generated = 0
+            if analysis["potential_impact_score"] >= 5 or analysis["estimated_size"] >= 5:
+                from app.blueprints.planning.models import PlanningObjection
+
+                logger.info(
+                    f"Generating potential objections for {reference} "
+                    f"(impact={analysis['potential_impact_score']}, "
+                    f"size={analysis['estimated_size']})"
+                )
+
+                # Remove any existing objections for this case (re-analysis)
+                PlanningObjection.query.filter_by(
+                    case_reference=reference
+                ).delete()
+                db.session.commit()
+
+                objections = _generate_objections(
+                    metadata, document_texts, reference, analysis
+                )
+
+                for obj_data in objections:
+                    objection = PlanningObjection(
+                        case_reference=reference,
+                        objection=obj_data["objection"],
+                        ai_rationalisation=obj_data["ai_rationalisation"],
+                    )
+                    db.session.add(objection)
+                    objections_generated += 1
+
+                db.session.commit()
+                logger.info(
+                    f"Generated {objections_generated} potential objections "
+                    f"for {reference}"
+                )
+
             logger.info(
                 f"Analysis complete for {reference}: "
                 f"impact={analysis['potential_impact_score']}, "
@@ -823,6 +963,7 @@ def analyse_planning_application(reference):
                 "tags": analysis["tags"],
                 "documents_downloaded": len(documents),
                 "documents_analysed": len(document_texts),
+                "objections_generated": objections_generated,
             }
 
         except Exception as e:

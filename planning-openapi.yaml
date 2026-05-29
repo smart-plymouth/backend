@@ -4,7 +4,7 @@ info:
   description: |
     API providing planning application case data for the Plymouth area,
     sourced from Plymouth City Council's public planning portal.
-  version: "1.0"
+  version: "1.1"
   contact:
     name: SmartPlymouth
 servers:
@@ -17,7 +17,7 @@ paths:
       summary: List planning cases
       description: |
         Returns a paginated list of planning cases with optional filtering
-        by status and/or received (submission) date.
+        by status and/or validated date.
       operationId: listCases
       tags:
         - Cases
@@ -113,6 +113,52 @@ paths:
         "404":
           description: Case not found
 
+  /cases/{reference}/analyse:
+    post:
+      summary: Trigger AI analysis for a planning application
+      description: |
+        Triggers an asynchronous AI analysis task for the specified planning
+        application. The task downloads documents from the planning portal,
+        collects metadata, and uses deepseek-r1 via Ollama to assess scale,
+        impact, and generate tags. If the application scores 5 or higher on
+        impact or size, potential reasons for objection are also generated.
+      operationId: triggerAnalysis
+      tags:
+        - Analysis
+      parameters:
+        - $ref: "#/components/parameters/CaseReference"
+      responses:
+        "202":
+          description: Analysis task accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskAccepted"
+        "404":
+          description: Case not found
+
+  /cases/{reference}/objections:
+    get:
+      summary: List potential objections for a planning application
+      description: |
+        Returns AI-generated potential reasons for objection for a planning
+        application. Objections are only generated for cases that score 5 or
+        higher on either impact or size during AI analysis.
+      operationId: listObjections
+      tags:
+        - Objections
+      parameters:
+        - $ref: "#/components/parameters/CaseReference"
+      responses:
+        "200":
+          description: List of potential objections
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ObjectionsList"
+        "404":
+          description: Case not found
+
 components:
   parameters:
     CaseReference:
@@ -183,6 +229,13 @@ components:
           maximum: 10
           description: AI-estimated development size (1 = small, 10 = huge)
           example: 4
+        ai_rationalisation:
+          type: string
+          nullable: true
+          description: |
+            AI-generated explanation of why the impact and size scores were
+            chosen, referencing specific details from the application.
+          example: "This application involves converting offices into four HMOs..."
         created_at:
           type: string
           format: date-time
@@ -198,6 +251,73 @@ components:
         - address
         - proposal
         - status
+
+    PlanningObjection:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the objection
+          example: 1
+        case_reference:
+          type: string
+          description: Reference of the associated planning case
+          example: "26/00747/CDM"
+        objection:
+          type: string
+          description: The grounds for objection
+          example: "Increased traffic congestion on residential streets"
+        ai_rationalisation:
+          type: string
+          description: |
+            AI explanation of why this is a valid potential objection,
+            referencing specific details from the application.
+          example: "The proposed development of four HMOs on Devonport Road..."
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the objection was generated
+          example: "2026-05-29T12:30:00+00:00"
+      required:
+        - id
+        - case_reference
+        - objection
+        - ai_rationalisation
+
+    ObjectionsList:
+      type: object
+      properties:
+        reference:
+          type: string
+          description: The planning case reference
+          example: "26/00747/CDM"
+        objections:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanningObjection"
+      required:
+        - reference
+        - objections
+
+    TaskAccepted:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Acceptance status
+          example: "accepted"
+        task_id:
+          type: string
+          description: Celery task ID for tracking progress
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        reference:
+          type: string
+          description: The planning case reference
+          example: "26/00747/CDM"
+      required:
+        - status
+        - task_id
+        - reference
 
     PaginatedCases:
       type: object

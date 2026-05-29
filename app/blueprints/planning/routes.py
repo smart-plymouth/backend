@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from flask import jsonify, request
 
 from app.blueprints.planning import planning_bp
-from app.blueprints.planning.models import PlanningCase
+from app.blueprints.planning.models import PlanningCase, PlanningObjection
 
 
 def _parse_date(value):
@@ -133,3 +133,25 @@ def trigger_analysis(reference):
         "task_id": task.id,
         "reference": reference,
     }), 202
+
+
+@planning_bp.route("/cases/<path:reference>/objections", methods=["GET"])
+def list_objections(reference):
+    """List potential reasons for objection for a planning application.
+
+    Only available for cases that have been AI-analysed and scored 5 or
+    higher on impact or size.
+    """
+    case = PlanningCase.query.get_or_404(reference)
+
+    objections = (
+        PlanningObjection.query
+        .filter_by(case_reference=reference)
+        .order_by(PlanningObjection.created_at.desc())
+        .all()
+    )
+
+    return jsonify({
+        "reference": reference,
+        "objections": [obj.to_dict() for obj in objections],
+    })
