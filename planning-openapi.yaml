@@ -158,6 +158,31 @@ components:
           nullable: true
           description: Date the application was validated (YYYY-MM-DD)
           example: "2026-05-22"
+        ai_analysis:
+          type: boolean
+          description: Whether AI analysis has been performed on this case
+          example: false
+        potential_impact_score:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 10
+          description: AI-assessed potential impact score (1 = least impact, 10 = most impact)
+          example: 7
+        tags:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: AI-generated tags categorising the planning application
+          example: ["residential", "change-of-use", "HMO"]
+        estimated_size:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 10
+          description: AI-estimated development size (1 = small, 10 = huge)
+          example: 4
         created_at:
           type: string
           format: date-time
