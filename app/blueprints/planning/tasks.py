@@ -312,3 +312,27 @@ def fetch_weekly_planning_applications(week_start_iso=None):
             "cases_added": cases_added,
             "cases_updated": cases_updated,
         }
+
+
+@celery.task
+def refresh_planning_applications():
+    """Queue a fetch task for every week in the last 2 years.
+
+    Runs daily to keep all cases up to date with status changes and
+    any other modifications on the planning portal.
+    """
+    today = date.today()
+    two_years_ago = today - timedelta(days=730)
+
+    # Find the first Monday on or after two_years_ago
+    days_until_monday = (7 - two_years_ago.weekday()) % 7
+    current_monday = two_years_ago + timedelta(days=days_until_monday)
+
+    weeks_queued = 0
+    while current_monday <= today:
+        fetch_weekly_planning_applications.delay(current_monday.isoformat())
+        current_monday += timedelta(weeks=1)
+        weeks_queued += 1
+
+    logger.info(f"Queued {weeks_queued} weekly fetch tasks for the last 2 years")
+    return {"status": "ok", "weeks_queued": weeks_queued}
