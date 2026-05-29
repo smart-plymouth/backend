@@ -361,10 +361,17 @@ def _get_application_key_val(reference, session):
     """Search for a planning application and extract its internal keyVal ID.
 
     The Idox system uses an internal keyVal parameter to identify applications.
-    We search by reference number and extract it from the results link.
+    We need to load the search form first to establish a session, then submit
+    the search to get results.
     """
     import re
 
+    # Step 1: Load the simple search form to establish session cookie
+    form_url = f"{PLANNING_APP_BASE_URL}search.do?action=simple"
+    form_response = session.get(form_url, timeout=30)
+    form_response.raise_for_status()
+
+    # Step 2: Submit the search with the reference number
     search_url = (
         f"{PLANNING_APP_BASE_URL}simpleSearchResults.do"
         f"?action=firstPage&searchCriteria.reference={reference}"
