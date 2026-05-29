@@ -279,6 +279,7 @@ def fetch_weekly_planning_applications(week_start_iso=None):
 
         cases_added = 0
         cases_updated = 0
+        new_references = []
 
         for case_data in cases:
             existing = PlanningCase.query.get(case_data["reference"])
@@ -304,9 +305,18 @@ def fetch_weekly_planning_applications(week_start_iso=None):
                     validated_date=case_data["validated_date"],
                 )
                 db.session.add(new_case)
+                new_references.append(case_data["reference"])
                 cases_added += 1
 
         db.session.commit()
+
+        # Queue AI analysis for newly added cases
+        for ref in new_references:
+            analyse_planning_application.delay(ref)
+        if new_references:
+            logger.info(
+                f"Queued AI analysis for {len(new_references)} new cases"
+            )
         logger.info(
             f"Planning applications: {cases_added} added, {cases_updated} updated "
             f"for week beginning {week_start}"
