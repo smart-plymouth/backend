@@ -31,26 +31,32 @@ def _get_previous_week_monday(today=None):
 def _fetch_weekly_list_page(week_start, session):
     """Submit the weekly list form and return the results page HTML.
 
-    The Idox Public Access system uses a two-step process:
-    1. GET the search form to establish a session
-    2. POST the form with the week date to get results
+    The Idox Public Access system requires:
+    1. A GET to the form page to establish a JSESSIONID cookie
+    2. A POST back to the same URL with form data and a Referer header
+       matching the form page (CSRF-like protection)
     """
-    # Step 1: Load the search form to get cookies/session
+    # Step 1: Load the search form to establish server-side session
     form_url = f"{WEEKLY_LIST_URL}?action=weeklyList"
-    session.get(form_url, timeout=30)
+    form_response = session.get(form_url, timeout=30)
+    form_response.raise_for_status()
 
-    # Step 2: Submit the weekly list search
-    # The form posts back to the same URL with the week start date
+    # Step 2: Submit the weekly list search form
+    # The date format expected by Idox is "DD+Mon+YYYY" (e.g. "18+May+2026")
+    # but sent as a normal form value — requests handles URL encoding
     form_data = {
         "searchType": "Application",
         "week": week_start.strftime("%d+%b+%Y"),
         "dateType": "DC_Validated",
-        "action": "firstPage",
     }
 
     response = session.post(
         f"{WEEKLY_LIST_URL}?action=firstPage",
         data=form_data,
+        headers={
+            "Referer": form_url,
+            "Origin": "https://planning.plymouth.gov.uk",
+        },
         timeout=30,
     )
     response.raise_for_status()
@@ -76,6 +82,9 @@ def _fetch_all_pages(week_start, session):
 
         response = session.get(
             f"{WEEKLY_LIST_URL}?action=page&searchCriteria.page={page}",
+            headers={
+                "Referer": f"{WEEKLY_LIST_URL}?action=firstPage",
+            },
             timeout=30,
         )
         response.raise_for_status()
@@ -204,9 +213,15 @@ def fetch_weekly_planning_applications(week_start_iso=None):
         session.verify = False
         session.headers.update({
             "User-Agent": (
-                "SmartPlymouth/1.0 "
-                "(https://github.com/SmartPlymouth; community project)"
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
             ),
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;"
+                "q=0.9,image/webp,*/*;q=0.8"
+            ),
+            "Accept-Language": "en-GB,en;q=0.9",
         })
 
         try:
