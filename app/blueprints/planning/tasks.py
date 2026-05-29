@@ -11,6 +11,12 @@ logger = logging.getLogger(__name__)
 WEEKLY_LIST_URL = (
     "https://planning.plymouth.gov.uk/online-applications/search.do"
 )
+WEEKLY_LIST_RESULTS_URL = (
+    "https://planning.plymouth.gov.uk/online-applications/weeklyListResults.do"
+)
+PAGED_RESULTS_URL = (
+    "https://planning.plymouth.gov.uk/online-applications/pagedSearchResults.do"
+)
 
 
 def _get_previous_week_monday(today=None):
@@ -33,25 +39,31 @@ def _fetch_weekly_list_page(week_start, session):
 
     The Idox Public Access system requires:
     1. A GET to the form page to establish a JSESSIONID cookie
-    2. A POST back to the same URL with form data and a Referer header
-       matching the form page (CSRF-like protection)
+    2. Extract the _csrf token from the form
+    3. POST to weeklyListResults.do with the CSRF token and form data
     """
-    # Step 1: Load the search form to establish server-side session
+    # Step 1: Load the search form to establish session and get CSRF token
     form_url = f"{WEEKLY_LIST_URL}?action=weeklyList"
     form_response = session.get(form_url, timeout=30)
     form_response.raise_for_status()
 
-    # Step 2: Submit the weekly list search form
-    # The date format expected by Idox is "DD+Mon+YYYY" (e.g. "18+May+2026")
-    # but sent as a normal form value — requests handles URL encoding
+    # Step 2: Extract the CSRF token from the form
+    soup = BeautifulSoup(form_response.text, "html.parser")
+    csrf_input = soup.find("input", {"name": "_csrf"})
+    csrf_token = csrf_input["value"] if csrf_input else ""
+
+    # Step 3: Submit the weekly list search form
+    # Date format is "DD Mon YYYY" (e.g. "18 May 2026")
     form_data = {
-        "searchType": "Application",
-        "week": week_start.strftime("%d+%b+%Y"),
+        "_csrf": csrf_token,
+        "searchCriteria.ward": "",
+        "week": week_start.strftime("%d %b %Y"),
         "dateType": "DC_Validated",
+        "searchType": "Application",
     }
 
     response = session.post(
-        f"{WEEKLY_LIST_URL}?action=firstPage",
+        f"{WEEKLY_LIST_RESULTS_URL}?action=firstPage",
         data=form_data,
         headers={
             "Referer": form_url,
@@ -81,9 +93,9 @@ def _fetch_all_pages(week_start, session):
             break
 
         response = session.get(
-            f"{WEEKLY_LIST_URL}?action=page&searchCriteria.page={page}",
+            f"{PAGED_RESULTS_URL}?action=page&searchCriteria.page={page}",
             headers={
-                "Referer": f"{WEEKLY_LIST_URL}?action=firstPage",
+                "Referer": f"{WEEKLY_LIST_RESULTS_URL}?action=firstPage",
             },
             timeout=30,
         )
@@ -125,37 +137,52 @@ def _parse_results(html_pages):
 def _parse_single_result(result_element):
     """Parse a single search result element into a case dict."""
     try:
-        # Reference number is typically in an anchor tag within the result
-        ref_link = result_element.find("a")
-        if not ref_link:
-            return None
+        # Proposal/description is in the summary link div
+        summary_link = result_element.find("a", class_="summaryLink")
+        proposal = ""
+        if summary_link:
+            div = summary_link.find("div")
+            proposal = div.get_text(strip=True) if div else summary_link.get_text(strip=True)
 
-        reference = ref_link.get_text(strip=True)
-
-        # Address and description are in separate spans/paragraphs
-        # The structure typically has: reference, address, proposal, status
+        # Address is in <p class="address">
         address_el = result_element.find("p", class_="address")
         address = address_el.get_text(strip=True) if address_el else ""
 
-        proposal_el = result_element.find("p", class_="description")
-        proposal = proposal_el.get_text(strip=True) if proposal_el else ""
-
-        status_el = result_element.find("span", class_="status")
-        status = status_el.get_text(strip=True) if status_el else "Pending"
-
-        # Try to extract dates from metadata spans
+        # Reference, dates, and status are all in <p class="metaInfo">
+        meta_el = result_element.find("p", class_="metaInfo")
+        reference = ""
         received_date = None
         validated_date = None
+        status = ""
 
-        meta_items = result_element.find_all("span", class_="metaInfo")
-        for meta in meta_items:
-            text = meta.get_text(strip=True)
-            if "Received:" in text:
-                date_str = text.replace("Received:", "").strip()
-                received_date = _parse_date(date_str)
-            elif "Validated:" in text:
-                date_str = text.replace("Validated:", "").strip()
-                validated_date = _parse_date(date_str)
+        if meta_el:
+            meta_text = meta_el.get_text(" ", strip=True)
+
+            # Extract reference number (after "Ref. No:")
+            import re
+
+            ref_match = re.search(r"Ref\.\s*No:\s*([\w/]+)", meta_text)
+            if ref_match:
+                reference = ref_match.group(1).strip()
+
+            # Extract received date
+            recv_match = re.search(
+                r"Received:\s*\w+\s+(\d{1,2}\s+\w+\s+\d{4})", meta_text
+            )
+            if recv_match:
+                received_date = _parse_date(recv_match.group(1))
+
+            # Extract validated date
+            val_match = re.search(
+                r"Validated:\s*\w+\s+(\d{1,2}\s+\w+\s+\d{4})", meta_text
+            )
+            if val_match:
+                validated_date = _parse_date(val_match.group(1))
+
+            # Extract status (after "Status:")
+            status_match = re.search(r"Status:\s*(.+?)(?:\s*\||\s*$)", meta_text)
+            if status_match:
+                status = status_match.group(1).strip()
 
         if not reference:
             return None
@@ -164,7 +191,7 @@ def _parse_single_result(result_element):
             "reference": reference,
             "address": address,
             "proposal": proposal,
-            "status": status,
+            "status": status or "Pending",
             "received_date": received_date,
             "validated_date": validated_date,
         }
