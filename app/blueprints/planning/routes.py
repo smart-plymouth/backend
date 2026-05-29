@@ -72,7 +72,7 @@ def list_cases():
     })
 
 
-@planning_bp.route("/fetch", methods=["POST"])
+'''@planning_bp.route("/fetch", methods=["POST"])
 def trigger_fetch():
     """Trigger a task to fetch planning validations for a given week.
 
@@ -101,7 +101,7 @@ def trigger_fetch():
         "status": "accepted",
         "task_id": task.id,
         "week_start": week_monday.isoformat(),
-    }), 202
+    }), 202'''
 
 
 @planning_bp.route("/cases/<path:reference>", methods=["GET"])
@@ -113,3 +113,23 @@ def get_case(reference):
     """
     case = PlanningCase.query.get_or_404(reference)
     return jsonify(case.to_dict())
+
+
+@planning_bp.route("/cases/<path:reference>/analyse", methods=["POST"])
+def trigger_analysis(reference):
+    """Trigger AI analysis for a specific planning application.
+
+    Downloads documents from the planning portal, collects metadata,
+    and uses deepseek-r1 via Ollama to assess scale and impact.
+    """
+    from app.blueprints.planning.tasks import analyse_planning_application
+
+    case = PlanningCase.query.get_or_404(reference)
+
+    task = analyse_planning_application.delay(reference)
+
+    return jsonify({
+        "status": "accepted",
+        "task_id": task.id,
+        "reference": reference,
+    }), 202
