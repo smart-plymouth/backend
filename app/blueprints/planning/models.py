@@ -1,0 +1,37 @@
+from app import db
+
+
+class PlanningCase(db.Model):
+    __tablename__ = "planning_cases"
+
+    reference = db.Column(db.String(50), primary_key=True)
+    address = db.Column(db.Text, nullable=False)
+    proposal = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(100), nullable=False)
+    received_date = db.Column(db.Date, nullable=True)
+    validated_date = db.Column(db.Date, nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True), server_default=db.func.now(), nullable=False
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        server_default=db.func.now(),
+        onupdate=db.func.now(),
+        nullable=False,
+    )
+
+    def to_dict(self):
+        return {
+            "reference": self.reference,
+            "address": self.address,
+            "proposal": self.proposal,
+            "status": self.status,
+            "received_date": (
+                self.received_date.isoformat() if self.received_date else None
+            ),
+            "validated_date": (
+                self.validated_date.isoformat() if self.validated_date else None
+            ),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
