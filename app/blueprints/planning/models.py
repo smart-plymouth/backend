@@ -10,6 +10,10 @@ class PlanningCase(db.Model):
     status = db.Column(db.String(100), nullable=False)
     received_date = db.Column(db.Date, nullable=True)
     validated_date = db.Column(db.Date, nullable=True)
+    ai_analysis = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    potential_impact_score = db.Column(db.Integer, nullable=True)
+    tags = db.Column(db.JSON, nullable=True)
+    estimated_size = db.Column(db.Integer, nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True), server_default=db.func.now(), nullable=False
     )
@@ -32,6 +36,10 @@ class PlanningCase(db.Model):
             "validated_date": (
                 self.validated_date.isoformat() if self.validated_date else None
             ),
+            "ai_analysis": self.ai_analysis,
+            "potential_impact_score": self.potential_impact_score,
+            "tags": self.tags,
+            "estimated_size": self.estimated_size,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
