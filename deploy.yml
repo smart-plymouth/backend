@@ -210,7 +210,7 @@ spec:
               value: redis://redis:6379/0
             - name: CELERY_RESULT_BACKEND
               value: redis://redis:6379/0
-          command: ["celery", "-A", "app.celery_app.celery", "worker", "--loglevel=info", "--concurrency=16"]
+          command: ["celery", "-A", "app.celery_app.celery", "worker", "--loglevel=info", "--concurrency=2"]
 
 ---
 # Celery Planning Analysis Worker Deployment (concurrency=1)

@@ -104,6 +104,19 @@ def trigger_fetch():
     }), 202'''
 
 
+@planning_bp.route("/refresh", methods=["POST"])
+def trigger_refresh():
+    """Trigger a full refresh of planning applications for the last 2 years."""
+    from app.blueprints.planning.tasks import refresh_planning_applications
+
+    task = refresh_planning_applications.delay()
+
+    return jsonify({
+        "status": "accepted",
+        "task_id": task.id,
+    }), 202
+
+
 @planning_bp.route("/cases/<path:reference>", methods=["GET"])
 def get_case(reference):
     """Get a single planning case by reference number.
