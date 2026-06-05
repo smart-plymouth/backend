@@ -4,7 +4,7 @@ info:
   description: |
     API providing planning application case data for the Plymouth area,
     sourced from Plymouth City Council's public planning portal.
-  version: "1.1"
+  version: "1.2"
   contact:
     name: SmartPlymouth
 servers:
@@ -91,6 +91,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /refresh:
+    post:
+      summary: Trigger a full refresh of planning applications
+      description: |
+        Initiates an asynchronous task that queues weekly fetch jobs for
+        every week in the last 2 years, refreshing all planning application
+        data from the council portal.
+      operationId: triggerRefresh
+      tags:
+        - Tasks
+      responses:
+        "202":
+          description: Refresh task accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshTaskAccepted"
 
   /cases/{reference}:
     get:
@@ -236,6 +254,20 @@ components:
             AI-generated explanation of why the impact and size scores were
             chosen, referencing specific details from the application.
           example: "This application involves converting offices into four HMOs..."
+        pros:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: AI-generated list of positive aspects and benefits of the application
+          example: ["Increases local housing supply", "Reuses existing building stock", "No new land take"]
+        cons:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: AI-generated list of negative aspects and drawbacks of the application
+          example: ["Increased pressure on street parking", "Potential noise disturbance for neighbours", "Loss of office employment space"]
         created_at:
           type: string
           format: date-time
@@ -318,6 +350,21 @@ components:
         - status
         - task_id
         - reference
+
+    RefreshTaskAccepted:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Acceptance status
+          example: "accepted"
+        task_id:
+          type: string
+          description: Celery task ID for tracking progress
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      required:
+        - status
+        - task_id
 
     PaginatedCases:
       type: object

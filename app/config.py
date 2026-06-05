@@ -14,4 +14,4 @@ class Config:
     OLLAMA_BASE_URL = os.environ.get(
         "OLLAMA_BASE_URL", "http://172.20.40.8:11434"
     )
-    OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "deepseek-r1")
+    OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:e4b")
