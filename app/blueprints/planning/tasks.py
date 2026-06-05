@@ -798,7 +798,7 @@ def _generate_objections(metadata, document_texts, reference, analysis):
     llm = OllamaLLM(
         model=Config.OLLAMA_MODEL,
         base_url=Config.OLLAMA_BASE_URL,
-        temperature=0.2,
+        temperature=0.1,
     )
 
     metadata_text = "\n".join(f"- {k}: {v}" for k, v in metadata.items())
@@ -872,7 +872,11 @@ def _generate_objections(metadata, document_texts, reference, analysis):
             "- Each objection should be distinct and address a different concern\n"
             "- Every objection MUST be tied to at least one specific policy with the full "
             "citation detail described above. If you cannot cite a specific policy, do not "
-            "include that objection.\n"
+            "include that objection.\n\n"
+            "## RESPONSE FORMAT (MANDATORY):\n"
+            "You MUST respond with ONLY a raw JSON array. No preamble, no explanation, "
+            "no markdown, no prose. Your entire response must start with [ and end with ]. "
+            "Any response that does not start with [ will be rejected.\n"
         )),
         ("human", (
             "Planning Application Reference: {reference}\n\n"
@@ -883,7 +887,7 @@ def _generate_objections(metadata, document_texts, reference, analysis):
             "## Application Metadata\n{metadata}\n\n"
             "## Document Contents\n{documents}\n\n"
             "## Relevant Planning Policy Context\n{policy_context}\n\n"
-            "Provide potential grounds for objection as a JSON array."
+            "RESPOND WITH ONLY A JSON ARRAY. No other text. Start your response with [\n"
         )),
     ])
 
@@ -926,11 +930,22 @@ def _generate_objections(metadata, document_texts, reference, analysis):
         if json_start != -1 and json_end > json_start:
             response_text = response_text[json_start:json_end]
         else:
-            logger.error(
-                f"No JSON array found in objections response for {reference}. "
-                f"Response (first 500 chars): {response_text[:500]}"
-            )
-            return []
+            # Last-ditch: if the model returned prose but embedded JSON objects,
+            # try to extract individual {...} blocks and wrap them in an array
+            import re
+            json_objects = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text)
+            if json_objects:
+                response_text = "[" + ",".join(json_objects) + "]"
+                logger.warning(
+                    f"Extracted {len(json_objects)} JSON objects from prose "
+                    f"response for {reference}"
+                )
+            else:
+                logger.error(
+                    f"No JSON array found in objections response for {reference}. "
+                    f"Response (first 500 chars): {response_text[:500]}"
+                )
+                return []
 
         objections = json.loads(response_text)
 
