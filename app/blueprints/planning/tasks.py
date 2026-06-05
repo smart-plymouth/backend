@@ -799,6 +799,7 @@ def _generate_objections(metadata, document_texts, reference, analysis):
         model=Config.OLLAMA_MODEL,
         base_url=Config.OLLAMA_BASE_URL,
         temperature=0.1,
+        format="json",
     )
 
     metadata_text = "\n".join(f"- {k}: {v}" for k, v in metadata.items())
@@ -948,6 +949,17 @@ def _generate_objections(metadata, document_texts, reference, analysis):
                 return []
 
         objections = json.loads(response_text)
+
+        # Handle both bare arrays and wrapped objects like {"objections": [...]}
+        if isinstance(objections, dict):
+            # Find the first list value in the dict
+            for value in objections.values():
+                if isinstance(value, list):
+                    objections = value
+                    break
+            else:
+                logger.error(f"Objections response is a dict with no list value for {reference}")
+                return []
 
         if not isinstance(objections, list):
             logger.error(f"Objections response is not a list for {reference}")
