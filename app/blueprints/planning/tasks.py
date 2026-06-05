@@ -759,8 +759,9 @@ def _load_policy_context(tags, query_text=""):
         if not search_terms.strip():
             search_terms = "planning development policy"
 
-        # Retrieve top relevant chunks
-        results = vectorstore.similarity_search(search_terms, k=10)
+        # Retrieve top relevant chunks — use more chunks to capture
+        # specific paragraph numbers and section headings for citation
+        results = vectorstore.similarity_search(search_terms, k=15)
 
         if not results:
             return "No relevant policy context found."
@@ -814,29 +815,49 @@ def _generate_objections(metadata, document_texts, reference, analysis):
     )
 
     # Ensure total prompt size stays within model context limits
-    if len(policy_context) > 8000:
-        policy_context = policy_context[:8000] + "\n\n[... policy context truncated ...]"
+    if len(policy_context) > 12000:
+        policy_context = policy_context[:12000] + "\n\n[... policy context truncated ...]"
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", (
-            "You are an expert planning analyst. "
+            "You are an expert planning analyst with deep knowledge of UK planning policy. "
             "A planning application has been assessed with a high impact or size score. "
             "Your task is to identify potential legitimate grounds for objection that "
             "members of the public or community groups might raise.\n\n"
             "You have been provided with relevant policy extracts from:\n"
             "- The Plymouth and South West Devon Joint Local Plan (JLP, adopted 2019)\n"
             "- The National Planning Policy Framework (NPPF, December 2024)\n\n"
-            "When generating objections, you MUST reference specific policy numbers "
-            "where applicable (e.g. 'JLP Policy DEV1', 'NPPF paragraph 135'). "
-            "Ground your objections in the policy framework.\n\n"
+            "## CRITICAL: Policy Citation Requirements\n\n"
+            "When generating objections, you MUST cite policies with FULL GRANULAR DETAIL. "
+            "Vague references like 'the NPPF' or 'local planning guidance' are NOT acceptable.\n\n"
+            "For NPPF references you MUST include:\n"
+            "- The specific paragraph number (e.g. 'NPPF paragraph 135')\n"
+            "- The chapter or section name (e.g. 'Chapter 12: Achieving well-designed places')\n"
+            "- A brief summary of what that paragraph actually says\n"
+            "Example: 'NPPF Chapter 12, paragraph 135 states that developments should "
+            "ensure they create places with a high standard of amenity for existing and "
+            "future users.'\n\n"
+            "For JLP references you MUST include:\n"
+            "- The specific policy code (e.g. 'DEV1', 'DEV2', 'DEV20', 'PLY39')\n"
+            "- The full policy title (e.g. 'DEV1: Protecting health and amenity')\n"
+            "- The specific clause or criterion within the policy that is relevant\n"
+            "Example: 'JLP Policy DEV1 (Protecting health and amenity) requires that "
+            "development must not result in unacceptable impacts on the privacy and "
+            "amenity of existing and future occupiers, including through overlooking.'\n\n"
+            "If the provided policy context does not contain sufficient detail for a specific "
+            "citation, state which policy area is relevant and note that the exact reference "
+            "should be verified. Do NOT fabricate paragraph numbers.\n\n"
             "You must respond with ONLY valid JSON, no other text or explanation.\n\n"
             "The JSON must be an array of objects, each with exactly these fields:\n"
             "- objection: a concise statement of the grounds for objection "
             "(e.g. 'Increased traffic congestion on residential streets')\n"
             "- ai_rationalisation: one or two paragraphs explaining WHY this is a "
-            "valid potential objection, referencing specific details from the application "
-            "metadata, documents, and relevant planning policies (JLP/NPPF). "
-            "Cite specific policy numbers where applicable.\n\n"
+            "valid potential objection. You MUST:\n"
+            "  1. Reference specific details from the application metadata and documents\n"
+            "  2. Cite the specific NPPF paragraph number AND chapter/section name\n"
+            "  3. Cite the specific JLP policy code AND title\n"
+            "  4. Briefly quote or paraphrase what the cited policy says on this matter\n"
+            "  5. Explain how the application conflicts with or engages that policy\n\n"
             "## Guidelines:\n"
             "- Only include legitimate planning grounds for objection (not personal preferences)\n"
             "- Valid grounds include: traffic/parking impact, overlooking/privacy, "
@@ -849,7 +870,9 @@ def _generate_objections(metadata, document_texts, reference, analysis):
             "existing businesses, personal disputes, or loss of private views\n"
             "- Provide between 1 and 5 objections depending on the complexity of the application\n"
             "- Each objection should be distinct and address a different concern\n"
-            "- Where possible, tie each objection to a specific JLP or NPPF policy\n"
+            "- Every objection MUST be tied to at least one specific policy with the full "
+            "citation detail described above. If you cannot cite a specific policy, do not "
+            "include that objection.\n"
         )),
         ("human", (
             "Planning Application Reference: {reference}\n\n"
