@@ -1,14 +1,12 @@
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
 WORKDIR /app
 
-# Install system dependencies for psycopg2
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Install system dependencies for psycopg2 and native builds
+RUN apk add --no-cache \
+    postgresql-dev gcc musl-dev libffi-dev
 
 # Install Python dependencies in smaller layers to stay under 100MB per layer
-COPY requirements.txt .
 
 # Core web framework and database
 RUN pip install --no-cache-dir \
@@ -45,7 +43,7 @@ RUN pip install --no-cache-dir \
     langchain-community==0.4.2 \
     langchain-text-splitters==1.1.2
 
-# Copy application code (without vectorstore)
+# Copy application code
 COPY app/ ./app/
 COPY migrations/ ./migrations/
 COPY scripts/ ./scripts/
