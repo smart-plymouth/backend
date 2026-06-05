@@ -718,6 +718,117 @@ def _run_ai_analysis(metadata, document_texts, reference):
         return None
 
 
+def _load_policy_context(tags):
+    """Load relevant policy extracts from the JLP and NPPF based on application tags.
+
+    Extracts text from the policy PDFs and selects sections relevant to the
+    application's characteristics (identified by tags). Returns a combined
+    string of policy excerpts suitable for inclusion in an LLM prompt.
+    """
+    policy_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "policy")
+    policy_dir = os.path.normpath(policy_dir)
+
+    policy_texts = []
+
+    # Define tag-to-keyword mappings for policy selection
+    tag_keywords = {
+        "residential": ["housing", "dwelling", "residential", "amenity", "DEV1", "DEV2", "DEV10"],
+        "hmo": ["HMO", "houses in multiple occupation", "DEV11", "shared housing"],
+        "commercial": ["employment", "economic", "commercial", "retail", "PLY30", "PLY31", "DEV15"],
+        "retail": ["retail", "town centre", "PLY32", "DEV16"],
+        "new-build": ["design", "layout", "density", "DEV20", "DEV23"],
+        "extension": ["design", "amenity", "DEV1", "DEV2", "residential"],
+        "conservation-area": ["conservation", "heritage", "historic", "DEV21", "DEV22"],
+        "listed-building": ["listed building", "heritage", "historic", "DEV21", "DEV22"],
+        "demolition": ["demolition", "conservation", "heritage", "DEV21"],
+        "change-of-use": ["change of use", "mixed use", "employment", "DEV15"],
+        "infrastructure": ["infrastructure", "transport", "DEV31", "DEV32"],
+        "industrial": ["industrial", "employment", "PLY30", "DEV15"],
+        "flood-risk": ["flood", "drainage", "water", "DEV35", "DEV37"],
+        "ecology": ["biodiversity", "ecology", "wildlife", "habitat", "DEV26", "DEV28"],
+        "green-space": ["green space", "open space", "recreation", "DEV27"],
+        "transport": ["transport", "traffic", "parking", "highway", "DEV29", "DEV31"],
+    }
+
+    # Build a set of keywords from the application tags
+    keywords = set()
+    # Always include general design and amenity policies
+    keywords.update(["design", "amenity", "DEV1", "DEV2", "DEV20", "sustainable development"])
+    for tag in tags:
+        tag_lower = tag.lower()
+        if tag_lower in tag_keywords:
+            keywords.update(tag_keywords[tag_lower])
+
+    # Extract relevant sections from both PDFs
+    for pdf_name, doc_label in [
+        ("NPPF_December_2024.pdf", "NPPF"),
+        ("Plymouth_SW_Devon_JLP_2019.pdf", "JLP"),
+    ]:
+        pdf_path = os.path.join(policy_dir, pdf_name)
+        if not os.path.exists(pdf_path):
+            logger.warning(f"Policy PDF not found: {pdf_path}")
+            continue
+
+        try:
+            extracted = _extract_policy_sections(pdf_path, keywords, doc_label)
+            if extracted:
+                policy_texts.append(extracted)
+        except Exception as e:
+            logger.warning(f"Failed to extract policy from {pdf_name}: {e}")
+
+    if not policy_texts:
+        return "No policy context available."
+
+    combined = "\n\n".join(policy_texts)
+    # Cap total policy context to avoid overwhelming the model
+    if len(combined) > 12000:
+        combined = combined[:12000] + "\n\n[... policy context truncated ...]"
+
+    return combined
+
+
+def _extract_policy_sections(pdf_path, keywords, doc_label):
+    """Extract pages from a policy PDF that contain any of the given keywords.
+
+    Returns a formatted string with relevant page content labelled by document.
+    """
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(pdf_path)
+        relevant_pages = []
+
+        for i, page in enumerate(reader.pages):
+            text = page.extract_text()
+            if not text:
+                continue
+
+            text_lower = text.lower()
+            # Check if any keyword appears on this page
+            if any(kw.lower() in text_lower for kw in keywords):
+                relevant_pages.append((i + 1, text))
+
+            # Limit how many pages we extract to keep context manageable
+            if len(relevant_pages) >= 15:
+                break
+
+        if not relevant_pages:
+            return ""
+
+        sections = [f"### {doc_label} - Relevant Policy Extracts\n"]
+        for page_num, text in relevant_pages:
+            # Trim excessively long pages
+            if len(text) > 2000:
+                text = text[:2000] + "..."
+            sections.append(f"[{doc_label} Page {page_num}]\n{text}\n")
+
+        return "\n".join(sections)
+
+    except Exception as e:
+        logger.warning(f"Failed to read PDF {pdf_path}: {e}")
+        return ""
+
+
 def _generate_objections(metadata, document_texts, reference, analysis):
     """Generate potential reasons for objection using AI.
 
@@ -802,6 +913,7 @@ def _generate_objections(metadata, document_texts, reference, analysis):
             "tags": ", ".join(analysis["tags"]),
             "metadata": metadata_text,
             "documents": combined_docs if combined_docs else "No documents available.",
+            "policy_context": policy_context,
         })
 
         response_text = response.strip()
@@ -964,41 +1076,40 @@ def analyse_planning_application(reference):
             case.cons = analysis["cons"]
             db.session.commit()
 
-            # Step 8: Generate potential objections if impact or size >= 3
+            # Step 8: Generate potential objections
             objections_generated = 0
-            if analysis["potential_impact_score"] >= 3 or analysis["estimated_size"] >= 3:
-                from app.blueprints.planning.models import PlanningObjection
+            from app.blueprints.planning.models import PlanningObjection
 
-                logger.info(
-                    f"Generating potential objections for {reference} "
-                    f"(impact={analysis['potential_impact_score']}, "
-                    f"size={analysis['estimated_size']})"
+            logger.info(
+                f"Generating potential objections for {reference} "
+                f"(impact={analysis['potential_impact_score']}, "
+                f"size={analysis['estimated_size']})"
+            )
+
+            # Remove any existing objections for this case (re-analysis)
+            PlanningObjection.query.filter_by(
+                case_reference=reference
+            ).delete()
+            db.session.commit()
+
+            objections = _generate_objections(
+                metadata, document_texts, reference, analysis
+            )
+
+            for obj_data in objections:
+                objection = PlanningObjection(
+                    case_reference=reference,
+                    objection=obj_data["objection"],
+                    ai_rationalisation=obj_data["ai_rationalisation"],
                 )
+                db.session.add(objection)
+                objections_generated += 1
 
-                # Remove any existing objections for this case (re-analysis)
-                PlanningObjection.query.filter_by(
-                    case_reference=reference
-                ).delete()
-                db.session.commit()
-
-                objections = _generate_objections(
-                    metadata, document_texts, reference, analysis
-                )
-
-                for obj_data in objections:
-                    objection = PlanningObjection(
-                        case_reference=reference,
-                        objection=obj_data["objection"],
-                        ai_rationalisation=obj_data["ai_rationalisation"],
-                    )
-                    db.session.add(objection)
-                    objections_generated += 1
-
-                db.session.commit()
-                logger.info(
-                    f"Generated {objections_generated} potential objections "
-                    f"for {reference}"
-                )
+            db.session.commit()
+            logger.info(
+                f"Generated {objections_generated} potential objections "
+                f"for {reference}"
+            )
 
             logger.info(
                 f"Analysis complete for {reference}: "
