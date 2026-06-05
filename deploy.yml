@@ -245,7 +245,7 @@ spec:
             - name: OLLAMA_BASE_URL
               value: http://172.20.40.8:11434
             - name: OLLAMA_MODEL
-              value: deepseek-r1
+              value: gemma4:e4b
           command: ["celery", "-A", "app.celery_app.celery", "worker", "--queues=planning_analysis", "--concurrency=1", "--loglevel=info"]
 
 ---
