@@ -15,6 +15,8 @@ class PlanningCase(db.Model):
     tags = db.Column(db.JSON, nullable=True)
     estimated_size = db.Column(db.Integer, nullable=True)
     ai_rationalisation = db.Column(db.UnicodeText, nullable=True)
+    pros = db.Column(db.JSON, nullable=True)
+    cons = db.Column(db.JSON, nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True), server_default=db.func.now(), nullable=False
     )
@@ -46,6 +48,8 @@ class PlanningCase(db.Model):
             "tags": self.tags,
             "estimated_size": self.estimated_size,
             "ai_rationalisation": self.ai_rationalisation,
+            "pros": self.pros,
+            "cons": self.cons,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

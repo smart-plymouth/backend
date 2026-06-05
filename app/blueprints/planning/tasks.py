@@ -612,7 +612,15 @@ def _run_ai_analysis(metadata, document_texts, reference):
             "- rationalisation: a string containing several paragraphs explaining WHY you "
             "chose the given impact score and size score. Justify your reasoning by referencing "
             "specific details from the application metadata and documents. Explain what factors "
-            "led to the scores and why they are appropriate for this type of application.\n\n"
+            "led to the scores and why they are appropriate for this type of application.\n"
+            "- pros: an array of strings listing the positive aspects and benefits of the "
+            "application (e.g. new housing supply, job creation, improved accessibility, "
+            "energy efficiency, regeneration of derelict land, community facilities). "
+            "Each entry should be a concise statement of one benefit.\n"
+            "- cons: an array of strings listing the negative aspects and drawbacks of the "
+            "application (e.g. increased traffic, loss of green space, overlooking neighbours, "
+            "noise during construction, strain on local services, out of character with area). "
+            "Each entry should be a concise statement of one drawback.\n\n"
             "## Scoring Rules (you MUST follow these strictly):\n\n"
             "### Minor homeowner changes (extensions, loft conversions, garages, porches, "
             "alterations to a single existing dwelling):\n"
@@ -681,12 +689,22 @@ def _run_ai_analysis(metadata, document_texts, reference):
         rationalisation = result.get("rationalisation", "")
         if not isinstance(rationalisation, str):
             rationalisation = str(rationalisation)
+        pros = result.get("pros", [])
+        if not isinstance(pros, list):
+            pros = []
+        pros = [str(p).strip() for p in pros if p]
+        cons = result.get("cons", [])
+        if not isinstance(cons, list):
+            cons = []
+        cons = [str(c).strip() for c in cons if c]
 
         return {
             "potential_impact_score": impact_score,
             "estimated_size": size,
             "tags": tags,
             "ai_rationalisation": rationalisation,
+            "pros": pros,
+            "cons": cons,
         }
     except (json.JSONDecodeError, ValueError, KeyError) as e:
         logger.error(f"Failed to parse AI response for {reference}: {e}")
@@ -920,6 +938,8 @@ def analyse_planning_application(reference):
             case.estimated_size = analysis["estimated_size"]
             case.tags = analysis["tags"]
             case.ai_rationalisation = analysis["ai_rationalisation"]
+            case.pros = analysis["pros"]
+            case.cons = analysis["cons"]
             db.session.commit()
 
             # Step 8: Generate potential objections if impact or size >= 3
