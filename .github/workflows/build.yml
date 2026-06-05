@@ -21,13 +21,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
+      - name: Build image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          load: true
           tags: registry.robertputt.technology/smartplymouth/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
+
+      - name: List image layers and sizes
+        run: |
+          docker history --no-trunc --format "table {{.CreatedBy}}\t{{.Size}}" \
+            registry.robertputt.technology/smartplymouth/backend:latest
+
+      - name: Push image
+        run: |
+          docker push registry.robertputt.technology/smartplymouth/backend:latest
