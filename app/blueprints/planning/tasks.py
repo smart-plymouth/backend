@@ -723,6 +723,9 @@ def _generate_objections(metadata, document_texts, reference, analysis):
 
     Only called when impact or size score is 3 or greater.
     Returns a list of dicts with 'objection' and 'ai_rationalisation' keys.
+
+    Includes relevant policy context from the Plymouth & South West Devon
+    Joint Local Plan (JLP) and the National Planning Policy Framework (NPPF).
     """
     from langchain_ollama import OllamaLLM
     from langchain_core.prompts import ChatPromptTemplate
@@ -739,30 +742,42 @@ def _generate_objections(metadata, document_texts, reference, analysis):
     if len(combined_docs) > 15000:
         combined_docs = combined_docs[:15000] + "\n\n[... truncated ...]"
 
+    # Load relevant policy context from JLP and NPPF
+    policy_context = _load_policy_context(analysis.get("tags", []))
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", (
             "You are an expert planning analyst. "
             "A planning application has been assessed with a high impact or size score. "
             "Your task is to identify potential legitimate grounds for objection that "
             "members of the public or community groups might raise.\n\n"
+            "You have been provided with relevant policy extracts from:\n"
+            "- The Plymouth and South West Devon Joint Local Plan (JLP, adopted 2019)\n"
+            "- The National Planning Policy Framework (NPPF, December 2024)\n\n"
+            "When generating objections, you MUST reference specific policy numbers "
+            "where applicable (e.g. 'JLP Policy DEV1', 'NPPF paragraph 135'). "
+            "Ground your objections in the policy framework.\n\n"
             "You must respond with ONLY valid JSON, no other text or explanation.\n\n"
             "The JSON must be an array of objects, each with exactly these fields:\n"
             "- objection: a concise statement of the grounds for objection "
             "(e.g. 'Increased traffic congestion on residential streets')\n"
             "- ai_rationalisation: one or two paragraphs explaining WHY this is a "
             "valid potential objection, referencing specific details from the application "
-            "metadata and documents. Explain what evidence supports this concern.\n\n"
+            "metadata, documents, and relevant planning policies (JLP/NPPF). "
+            "Cite specific policy numbers where applicable.\n\n"
             "## Guidelines:\n"
             "- Only include legitimate planning grounds for objection (not personal preferences)\n"
             "- Valid grounds include: traffic/parking impact, overlooking/privacy, "
             "noise/disturbance, visual impact, loss of light, impact on conservation areas, "
             "flood risk, strain on local infrastructure, loss of green space, "
             "overdevelopment, impact on wildlife/ecology, heritage concerns, "
-            "inadequate amenity space, out of character with area\n"
+            "inadequate amenity space, out of character with area, conflict with "
+            "JLP or NPPF policies\n"
             "- Do NOT include objections based on: property values, competition with "
             "existing businesses, personal disputes, or loss of private views\n"
             "- Provide between 1 and 5 objections depending on the complexity of the application\n"
             "- Each objection should be distinct and address a different concern\n"
+            "- Where possible, tie each objection to a specific JLP or NPPF policy\n"
         )),
         ("human", (
             "Planning Application Reference: {reference}\n\n"
@@ -772,6 +787,7 @@ def _generate_objections(metadata, document_texts, reference, analysis):
             "- Tags: {tags}\n\n"
             "## Application Metadata\n{metadata}\n\n"
             "## Document Contents\n{documents}\n\n"
+            "## Relevant Planning Policy Context\n{policy_context}\n\n"
             "Provide potential grounds for objection as a JSON array."
         )),
     ])
