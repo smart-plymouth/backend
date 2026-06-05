@@ -718,115 +718,68 @@ def _run_ai_analysis(metadata, document_texts, reference):
         return None
 
 
-def _load_policy_context(tags):
-    """Load relevant policy extracts from the JLP and NPPF based on application tags.
+def _load_policy_context(tags, query_text=""):
+    """Load relevant policy context from the pre-built ChromaDB vector store.
 
-    Extracts text from the policy PDFs and selects sections relevant to the
-    application's characteristics (identified by tags). Returns a combined
-    string of policy excerpts suitable for inclusion in an LLM prompt.
+    Uses semantic search to find the most relevant policy passages based on
+    the application's tags and proposal text.
+
+    Args:
+        tags: List of tags from the AI analysis (e.g. ['residential', 'HMO'])
+        query_text: Additional text to search against (e.g. the proposal)
+
+    Returns:
+        A formatted string of relevant policy passages.
     """
-    policy_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "policy")
-    policy_dir = os.path.normpath(policy_dir)
+    from langchain_chroma import Chroma
+    from langchain_ollama import OllamaEmbeddings
 
-    policy_texts = []
+    vectorstore_dir = Config.POLICY_VECTORSTORE_DIR
 
-    # Define tag-to-keyword mappings for policy selection
-    tag_keywords = {
-        "residential": ["housing", "dwelling", "residential", "amenity", "DEV1", "DEV2", "DEV10"],
-        "hmo": ["HMO", "houses in multiple occupation", "DEV11", "shared housing"],
-        "commercial": ["employment", "economic", "commercial", "retail", "PLY30", "PLY31", "DEV15"],
-        "retail": ["retail", "town centre", "PLY32", "DEV16"],
-        "new-build": ["design", "layout", "density", "DEV20", "DEV23"],
-        "extension": ["design", "amenity", "DEV1", "DEV2", "residential"],
-        "conservation-area": ["conservation", "heritage", "historic", "DEV21", "DEV22"],
-        "listed-building": ["listed building", "heritage", "historic", "DEV21", "DEV22"],
-        "demolition": ["demolition", "conservation", "heritage", "DEV21"],
-        "change-of-use": ["change of use", "mixed use", "employment", "DEV15"],
-        "infrastructure": ["infrastructure", "transport", "DEV31", "DEV32"],
-        "industrial": ["industrial", "employment", "PLY30", "DEV15"],
-        "flood-risk": ["flood", "drainage", "water", "DEV35", "DEV37"],
-        "ecology": ["biodiversity", "ecology", "wildlife", "habitat", "DEV26", "DEV28"],
-        "green-space": ["green space", "open space", "recreation", "DEV27"],
-        "transport": ["transport", "traffic", "parking", "highway", "DEV29", "DEV31"],
-    }
-
-    # Build a set of keywords from the application tags
-    keywords = set()
-    # Always include general design and amenity policies
-    keywords.update(["design", "amenity", "DEV1", "DEV2", "DEV20", "sustainable development"])
-    for tag in tags:
-        tag_lower = tag.lower()
-        if tag_lower in tag_keywords:
-            keywords.update(tag_keywords[tag_lower])
-
-    # Extract relevant sections from both PDFs
-    for pdf_name, doc_label in [
-        ("NPPF_December_2024.pdf", "NPPF"),
-        ("Plymouth_SW_Devon_JLP_2019.pdf", "JLP"),
-    ]:
-        pdf_path = os.path.join(policy_dir, pdf_name)
-        if not os.path.exists(pdf_path):
-            logger.warning(f"Policy PDF not found: {pdf_path}")
-            continue
-
-        try:
-            extracted = _extract_policy_sections(pdf_path, keywords, doc_label)
-            if extracted:
-                policy_texts.append(extracted)
-        except Exception as e:
-            logger.warning(f"Failed to extract policy from {pdf_name}: {e}")
-
-    if not policy_texts:
+    if not os.path.exists(vectorstore_dir):
+        logger.warning(f"Policy vector store not found at {vectorstore_dir}")
         return "No policy context available."
 
-    combined = "\n\n".join(policy_texts)
-    # Cap total policy context to avoid overwhelming the model
-    if len(combined) > 12000:
-        combined = combined[:12000] + "\n\n[... policy context truncated ...]"
-
-    return combined
-
-
-def _extract_policy_sections(pdf_path, keywords, doc_label):
-    """Extract pages from a policy PDF that contain any of the given keywords.
-
-    Returns a formatted string with relevant page content labelled by document.
-    """
     try:
-        from pypdf import PdfReader
+        embeddings = OllamaEmbeddings(
+            model=Config.OLLAMA_EMBEDDING_MODEL,
+            base_url=Config.OLLAMA_BASE_URL,
+        )
 
-        reader = PdfReader(pdf_path)
-        relevant_pages = []
+        vectorstore = Chroma(
+            persist_directory=vectorstore_dir,
+            embedding_function=embeddings,
+            collection_name="planning_policy",
+        )
 
-        for i, page in enumerate(reader.pages):
-            text = page.extract_text()
-            if not text:
-                continue
+        # Build a search query from tags and any additional text
+        search_terms = " ".join(tags) if tags else ""
+        if query_text:
+            search_terms = f"{query_text} {search_terms}"
+        if not search_terms.strip():
+            search_terms = "planning development policy"
 
-            text_lower = text.lower()
-            # Check if any keyword appears on this page
-            if any(kw.lower() in text_lower for kw in keywords):
-                relevant_pages.append((i + 1, text))
+        # Retrieve top relevant chunks
+        results = vectorstore.similarity_search(search_terms, k=10)
 
-            # Limit how many pages we extract to keep context manageable
-            if len(relevant_pages) >= 15:
-                break
+        if not results:
+            return "No relevant policy context found."
 
-        if not relevant_pages:
-            return ""
-
-        sections = [f"### {doc_label} - Relevant Policy Extracts\n"]
-        for page_num, text in relevant_pages:
-            # Trim excessively long pages
-            if len(text) > 2000:
-                text = text[:2000] + "..."
-            sections.append(f"[{doc_label} Page {page_num}]\n{text}\n")
+        # Format results with source attribution
+        sections = ["### Relevant Planning Policy Extracts\n"]
+        for doc in results:
+            source = doc.metadata.get("source_document", "Unknown")
+            page = doc.metadata.get("page", "?")
+            sections.append(
+                f"[{source} Page {int(page) + 1 if isinstance(page, (int, float)) else page}]\n"
+                f"{doc.page_content}\n"
+            )
 
         return "\n".join(sections)
 
     except Exception as e:
-        logger.warning(f"Failed to read PDF {pdf_path}: {e}")
-        return ""
+        logger.error(f"Failed to query policy vector store: {e}")
+        return "No policy context available (vector store error)."
 
 
 def _generate_objections(metadata, document_texts, reference, analysis):
@@ -853,8 +806,16 @@ def _generate_objections(metadata, document_texts, reference, analysis):
     if len(combined_docs) > 15000:
         combined_docs = combined_docs[:15000] + "\n\n[... truncated ...]"
 
-    # Load relevant policy context from JLP and NPPF
-    policy_context = _load_policy_context(analysis.get("tags", []))
+    # Load relevant policy context from JLP and NPPF via RAG
+    proposal_text = metadata.get("Proposal", metadata.get("Description", ""))
+    policy_context = _load_policy_context(
+        analysis.get("tags", []),
+        query_text=proposal_text,
+    )
+
+    # Ensure total prompt size stays within model context limits
+    if len(policy_context) > 8000:
+        policy_context = policy_context[:8000] + "\n\n[... policy context truncated ...]"
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", (
@@ -916,18 +877,37 @@ def _generate_objections(metadata, document_texts, reference, analysis):
             "policy_context": policy_context,
         })
 
-        response_text = response.strip()
+        response_text = response.strip() if response else ""
+
+        if not response_text:
+            logger.error(
+                f"Empty response from model for objections on {reference}. "
+                f"Prompt may exceed context window."
+            )
+            return []
+
         # Remove markdown code fences if present
         if response_text.startswith("```"):
             lines = response_text.split("\n")
             lines = [l for l in lines if not l.strip().startswith("```")]
             response_text = "\n".join(lines)
 
+        # Remove <think> tags or other preamble
+        think_end = response_text.find("</think>")
+        if think_end != -1:
+            response_text = response_text[think_end + len("</think>"):].strip()
+
         # Extract JSON array from response
         json_start = response_text.find("[")
         json_end = response_text.rfind("]") + 1
         if json_start != -1 and json_end > json_start:
             response_text = response_text[json_start:json_end]
+        else:
+            logger.error(
+                f"No JSON array found in objections response for {reference}. "
+                f"Response (first 500 chars): {response_text[:500]}"
+            )
+            return []
 
         objections = json.loads(response_text)
 

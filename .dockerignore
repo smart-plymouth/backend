@@ -17,3 +17,6 @@ Dockerfile
 deploy.yml
 README.md
 LICENSE
+
+# Exclude raw policy PDFs (32MB+) - the vectorstore is what we need at runtime
+data/policy/*.pdf
