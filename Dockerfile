@@ -34,7 +34,13 @@ RUN pip install --no-cache-dir \
     langchain-core==1.4.1 \
     langchain-ollama==1.1.0
 
-# ChromaDB (large due to onnxruntime)
+# ChromaDB heavy dependencies split across layers to stay under 100MB each
+RUN pip install --no-cache-dir \
+    numpy==2.2.6
+
+RUN pip install --no-cache-dir \
+    onnxruntime==1.22.0
+
 RUN pip install --no-cache-dir \
     chromadb==1.5.9
 
