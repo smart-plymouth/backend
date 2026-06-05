@@ -1,10 +1,11 @@
-FROM python:3.12-alpine
+FROM python:3.12-slim
 
 WORKDIR /app
 
 # Install system dependencies for psycopg2 and native builds
-RUN apk add --no-cache \
-    postgresql-dev gcc musl-dev libffi-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev gcc libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies in smaller layers to stay under 100MB per layer
 
