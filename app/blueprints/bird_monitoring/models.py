@@ -13,6 +13,7 @@ class MonitoringSite(db.Model):
     latitude = db.Column(db.Float, nullable=False)
     longitude = db.Column(db.Float, nullable=False)
     type = db.Column(db.String(50), nullable=False, default="BirdNET-Pi")
+    site_key = db.Column(db.String(255), nullable=False, unique=True)
 
     sightings = db.relationship(
         "SpeciesSighting", back_populates="site", lazy="dynamic"

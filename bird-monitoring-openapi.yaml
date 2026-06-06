@@ -12,19 +12,19 @@ servers:
     description: Production
 
 paths:
-  /webhook/{site_id}:
+  /webhook/{site_key}:
     post:
       summary: Receive a bird detection webhook
       description: |
         Receives a bird call detection event from an edge device (BirdNET-Pi).
-        The site_id in the URL authenticates the request — if the site does not
-        exist, the request is rejected with a 401. If the species has not been
+        The site_key in the URL authenticates the request — if no site matches
+        the key, the request is rejected with a 401. If the species has not been
         seen before it is created automatically.
       operationId: receiveWebhook
       tags:
         - Webhooks
       parameters:
-        - $ref: "#/components/parameters/SiteId"
+        - $ref: "#/components/parameters/SiteKey"
       requestBody:
         required: true
         content:
@@ -135,15 +135,14 @@ paths:
 
 components:
   parameters:
-    SiteId:
-      name: site_id
+    SiteKey:
+      name: site_key
       in: path
       required: true
-      description: UUID of the monitoring site. Acts as authentication for webhook requests.
+      description: Secret key assigned to the monitoring site. Used to authenticate webhook requests.
       schema:
         type: string
-        format: uuid
-        example: "a3b1c2d4-e5f6-7890-abcd-ef1234567890"
+        example: "sk_a3b1c2d4e5f67890"
 
   schemas:
     WebhookPayload:

@@ -19,18 +19,18 @@ def _parse_date(value):
         return None
 
 
-@bird_monitoring_bp.route("/webhook/<site_id>", methods=["POST"])
-def receive_webhook(site_id):
+@bird_monitoring_bp.route("/webhook/<site_key>", methods=["POST"])
+def receive_webhook(site_key):
     """Receive a bird detection webhook from an edge device.
 
-    The site_id in the URL acts as authentication — if the site doesn't
-    exist, the request is rejected with 401.
+    The site_key in the URL authenticates the request — if no site matches
+    the key, the request is rejected with 401.
 
     POST body (JSON):
         common_name  - species common name (string, required)
         confidence   - detection confidence (float, required)
     """
-    site = MonitoringSite.query.filter_by(site_id=site_id).first()
+    site = MonitoringSite.query.filter_by(site_key=site_key).first()
     if site is None:
         return jsonify({"error": "Unauthorized"}), 401
 
