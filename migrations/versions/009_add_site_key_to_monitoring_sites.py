@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.add_column(
         "monitoring_sites",
-        sa.Column("site_key", sa.String(255), nullable=False),
+        sa.Column("site_key", sa.String(255), nullable=True),
     )
     op.create_index(
         "ix_monitoring_sites_site_key",
