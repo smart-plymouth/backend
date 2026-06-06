@@ -25,10 +25,10 @@ celery.conf.update(
             "task": "app.blueprints.emergency_wait_times.tasks.fetch_wait_times",
             "schedule": 300.0,  # every 5 minutes
         },
-        "refresh-planning-applications-daily": {
-            "task": "app.blueprints.planning.tasks.refresh_planning_applications",
-            # "schedule": crontab(hour=7, minute=0),  # Every day at 07:00
-        },
+        #"refresh-planning-applications-daily": {
+        #    "task": "app.blueprints.planning.tasks.refresh_planning_applications",
+        #    "schedule": crontab(hour=7, minute=0),  # Every day at 07:00
+        #},
     },
 )
 
