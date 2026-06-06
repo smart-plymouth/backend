@@ -1,0 +1,310 @@
+openapi: 3.0.3
+info:
+  title: Bird Monitoring API
+  description: |
+    API for receiving bird detection webhooks from BirdNET-Pi edge devices
+    and exploring bird sighting data across monitoring sites in the Plymouth area.
+  version: "1.0"
+  contact:
+    name: SmartPlymouth
+servers:
+  - url: https://api.smartplymouth.org/api/bird-monitoring/v1.0
+    description: Production
+
+paths:
+  /webhook/{site_id}:
+    post:
+      summary: Receive a bird detection webhook
+      description: |
+        Receives a bird call detection event from an edge device (BirdNET-Pi).
+        The site_id in the URL authenticates the request — if the site does not
+        exist, the request is rejected with a 401. If the species has not been
+        seen before it is created automatically.
+      operationId: receiveWebhook
+      tags:
+        - Webhooks
+      parameters:
+        - $ref: "#/components/parameters/SiteId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookPayload"
+      responses:
+        "201":
+          description: Sighting recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookResponse"
+        "400":
+          description: Invalid or missing request body fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unknown site_id — request rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /sites:
+    get:
+      summary: List monitoring sites
+      description: Returns all registered bird monitoring sites.
+      operationId: listSites
+      tags:
+        - Sites
+      responses:
+        "200":
+          description: List of monitoring sites
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SitesList"
+
+  /sightings:
+    get:
+      summary: List bird sightings
+      description: |
+        Returns a paginated list of bird sightings with optional filtering
+        by site and date range. The date range must not exceed 31 days.
+      operationId: listSightings
+      tags:
+        - Sightings
+      parameters:
+        - name: site_id
+          in: query
+          required: false
+          description: Filter sightings to a specific monitoring site.
+          schema:
+            type: string
+            format: uuid
+            example: "a3b1c2d4-e5f6-7890-abcd-ef1234567890"
+        - name: from_date
+          in: query
+          required: false
+          description: Start of date range filter (inclusive). YYYY-MM-DD format.
+          schema:
+            type: string
+            format: date
+            example: "2026-06-01"
+        - name: to_date
+          in: query
+          required: false
+          description: End of date range filter (inclusive). YYYY-MM-DD format.
+          schema:
+            type: string
+            format: date
+            example: "2026-06-07"
+        - name: page
+          in: query
+          required: false
+          description: Page number (1-indexed).
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+            example: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100).
+          schema:
+            type: integer
+            default: 25
+            minimum: 1
+            maximum: 100
+            example: 25
+      responses:
+        "200":
+          description: A paginated list of bird sightings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedSightings"
+        "400":
+          description: Invalid query parameters (bad date format or range exceeds 31 days)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  parameters:
+    SiteId:
+      name: site_id
+      in: path
+      required: true
+      description: UUID of the monitoring site. Acts as authentication for webhook requests.
+      schema:
+        type: string
+        format: uuid
+        example: "a3b1c2d4-e5f6-7890-abcd-ef1234567890"
+
+  schemas:
+    WebhookPayload:
+      type: object
+      properties:
+        common_name:
+          type: string
+          description: Common name of the detected bird species
+          example: "European Robin"
+        confidence:
+          type: number
+          format: float
+          description: Detection confidence score from BirdNET-Pi
+          example: 0.87
+      required:
+        - common_name
+        - confidence
+
+    WebhookResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Result status
+          example: "recorded"
+        sighting_id:
+          type: integer
+          description: ID of the created sighting record
+          example: 42
+        species:
+          $ref: "#/components/schemas/Species"
+      required:
+        - status
+        - sighting_id
+        - species
+
+    MonitoringSite:
+      type: object
+      properties:
+        site_id:
+          type: string
+          format: uuid
+          description: Unique identifier for the monitoring site
+          example: "a3b1c2d4-e5f6-7890-abcd-ef1234567890"
+        name:
+          type: string
+          description: Human-readable name of the site
+          example: "Central Park Wetlands"
+        latitude:
+          type: number
+          format: double
+          description: Latitude of the monitoring device
+          example: 50.3755
+        longitude:
+          type: number
+          format: double
+          description: Longitude of the monitoring device
+          example: -4.1427
+        type:
+          type: string
+          description: Type of monitoring device
+          example: "BirdNET-Pi"
+      required:
+        - site_id
+        - name
+        - latitude
+        - longitude
+        - type
+
+    Species:
+      type: object
+      properties:
+        species_id:
+          type: integer
+          description: Unique identifier for the species
+          example: 12
+        common_name:
+          type: string
+          description: Common name of the species
+          example: "European Robin"
+      required:
+        - species_id
+        - common_name
+
+    SpeciesSighting:
+      type: object
+      properties:
+        sighting_id:
+          type: integer
+          description: Unique identifier for the sighting
+          example: 42
+        site_id:
+          type: string
+          format: uuid
+          description: Monitoring site where the sighting occurred
+          example: "a3b1c2d4-e5f6-7890-abcd-ef1234567890"
+        species:
+          $ref: "#/components/schemas/Species"
+        confidence:
+          type: number
+          format: float
+          description: Detection confidence score
+          example: 0.87
+        datetime:
+          type: string
+          format: date-time
+          description: Timestamp of the detection
+          example: "2026-06-05T14:23:01+00:00"
+      required:
+        - sighting_id
+        - site_id
+        - species
+        - confidence
+        - datetime
+
+    SitesList:
+      type: object
+      properties:
+        sites:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonitoringSite"
+      required:
+        - sites
+
+    PaginatedSightings:
+      type: object
+      properties:
+        sightings:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpeciesSighting"
+        total:
+          type: integer
+          description: Total number of matching sightings
+          example: 128
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        pages:
+          type: integer
+          description: Total number of pages
+          example: 6
+        per_page:
+          type: integer
+          description: Results per page
+          example: 25
+      required:
+        - sightings
+        - total
+        - page
+        - pages
+        - per_page
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "common_name and confidence are required"
+      required:
+        - error
