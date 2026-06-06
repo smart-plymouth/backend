@@ -220,7 +220,7 @@ metadata:
   name: celery-worker-planning-analysis
   namespace: smartplymouth
 spec:
-  replicas: 2 
+  replicas: 1 
   selector:
     matchLabels:
       app: celery-worker-planning-analysis
