@@ -27,7 +27,7 @@ celery.conf.update(
         },
         "refresh-planning-applications-daily": {
             "task": "app.blueprints.planning.tasks.refresh_planning_applications",
-            "schedule": crontab(hour=7, minute=0),  # Every day at 07:00
+            # "schedule": crontab(hour=7, minute=0),  # Every day at 07:00
         },
     },
 )
