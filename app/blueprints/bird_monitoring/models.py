@@ -34,6 +34,7 @@ class Species(db.Model):
 
     species_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     common_name = db.Column(db.String(255), nullable=False, unique=True)
+    scientific_name = db.Column(db.String(255), nullable=True)
 
     sightings = db.relationship(
         "SpeciesSighting", back_populates="species_rel", lazy="dynamic"
@@ -43,6 +44,7 @@ class Species(db.Model):
         return {
             "species_id": self.species_id,
             "common_name": self.common_name,
+            "scientific_name": self.scientific_name,
         }
 
 

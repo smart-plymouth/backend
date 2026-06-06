@@ -148,18 +148,32 @@ components:
     WebhookPayload:
       type: object
       properties:
-        common_name:
+        version:
           type: string
-          description: Common name of the detected bird species
-          example: "European Robin"
-        confidence:
-          type: number
-          format: float
-          description: Detection confidence score from BirdNET-Pi
-          example: 0.87
+          description: Notification format version
+          example: "1.0"
+        title:
+          type: string
+          description: Notification title
+          example: "BirdNET-PiDetection"
+        message:
+          type: string
+          description: |
+            JSON-encoded string containing the detection data with keys:
+            common_name, scientific_name, confidence.
+          example: '{"common_name": "Eurasian Blackbird", "scientific_name": "Turdus merula", "confidence": 74}'
+        attachments:
+          type: array
+          items:
+            type: object
+          description: List of attachments (currently unused)
+          example: []
+        type:
+          type: string
+          description: Notification type
+          example: "info"
       required:
-        - common_name
-        - confidence
+        - message
 
     WebhookResponse:
       type: object
@@ -222,7 +236,12 @@ components:
         common_name:
           type: string
           description: Common name of the species
-          example: "European Robin"
+          example: "Eurasian Blackbird"
+        scientific_name:
+          type: string
+          nullable: true
+          description: Scientific (Latin) name of the species
+          example: "Turdus merula"
       required:
         - species_id
         - common_name

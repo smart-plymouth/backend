@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime, timedelta
 
 from flask import jsonify, request
@@ -26,9 +27,13 @@ def receive_webhook(site_key):
     The site_key in the URL authenticates the request — if no site matches
     the key, the request is rejected with 401.
 
-    POST body (JSON):
-        common_name  - species common name (string, required)
-        confidence   - detection confidence (float, required)
+    POST body (JSON) — BirdNET-Pi notification format:
+        version      - notification version
+        title        - notification title
+        message      - JSON-encoded string with detection data:
+                       { "common_name": "...", "scientific_name": "...", "confidence": ... }
+        attachments  - list of attachments (unused)
+        type         - notification type
     """
     site = MonitoringSite.query.filter_by(site_key=site_key).first()
     if site is None:
@@ -38,8 +43,18 @@ def receive_webhook(site_key):
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 
-    common_name = data.get("common_name")
-    confidence = data.get("confidence")
+    # The actual detection data is JSON-encoded inside the "message" field
+    message_raw = data.get("message")
+    if not message_raw:
+        return jsonify({"error": "message field is required"}), 400
+
+    try:
+        message = json.loads(message_raw)
+    except (json.JSONDecodeError, TypeError):
+        return jsonify({"error": "message field must be a valid JSON string"}), 400
+
+    common_name = message.get("common_name")
+    confidence = message.get("confidence")
 
     if not common_name or confidence is None:
         return jsonify({"error": "common_name and confidence are required"}), 400
@@ -52,9 +67,14 @@ def receive_webhook(site_key):
     # Find or create species
     species = Species.query.filter_by(common_name=common_name).first()
     if species is None:
-        species = Species(common_name=common_name)
+        species = Species(
+            common_name=common_name,
+            scientific_name=message.get("scientific_name"),
+        )
         db.session.add(species)
         db.session.flush()
+    elif not species.scientific_name and message.get("scientific_name"):
+        species.scientific_name = message.get("scientific_name")
 
     # Create sighting
     sighting = SpeciesSighting(
