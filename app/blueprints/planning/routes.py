@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from flask import jsonify, request
+from sqlalchemy import cast, or_, String
 
 from app.blueprints.planning import planning_bp
 from app.blueprints.planning.models import PlanningCase, PlanningObjection
@@ -16,9 +17,10 @@ def _parse_date(value):
 
 @planning_bp.route("/cases", methods=["GET"])
 def list_cases():
-    """List planning cases with optional filtering.
+    """List planning cases with optional filtering and free text search.
 
     Query params:
+        search         - free text search across proposal, address, dates, and tags
         status         - filter by status (partial match)
         validated_date - exact validated date (YYYY-MM-DD)
         validated_from - start of validated date range (inclusive)
@@ -26,6 +28,7 @@ def list_cases():
         page           - page number (default 1)
         per_page       - results per page (default 25, max 100)
     """
+    search = request.args.get("search")
     status = request.args.get("status")
     validated_date = request.args.get("validated_date")
     validated_from = request.args.get("validated_from")
@@ -35,6 +38,19 @@ def list_cases():
     per_page = min(per_page, 100)  # cap at 100
 
     query = PlanningCase.query
+
+    # Free text search across proposal, address, dates, and tags
+    if search:
+        like_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                PlanningCase.proposal.ilike(like_term),
+                PlanningCase.address.ilike(like_term),
+                cast(PlanningCase.received_date, String).ilike(like_term),
+                cast(PlanningCase.validated_date, String).ilike(like_term),
+                cast(PlanningCase.tags, String).ilike(like_term),
+            )
+        )
 
     if status:
         query = query.filter(PlanningCase.status.ilike(f"%{status}%"))
