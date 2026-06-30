@@ -4,7 +4,7 @@ from flask import jsonify, request
 from sqlalchemy import cast, or_, String
 
 from app.blueprints.planning import planning_bp
-from app.blueprints.planning.models import PlanningCase, PlanningObjection
+from app.blueprints.planning.models import PlanningCase, PlanningObjection, PlanningSupport
 
 
 def _parse_date(value):
@@ -183,4 +183,27 @@ def list_objections(reference):
     return jsonify({
         "reference": reference,
         "objections": [obj.to_dict() for obj in objections],
+    })
+
+
+
+@planning_bp.route("/cases/<path:reference>/supports", methods=["GET"])
+def list_supports(reference):
+    """List potential reasons for support for a planning application.
+
+    Only available for cases that have been AI-analysed. Support reasons
+    are backed by relevant planning policy references.
+    """
+    case = PlanningCase.query.get_or_404(reference)
+
+    supports = (
+        PlanningSupport.query
+        .filter_by(case_reference=reference)
+        .order_by(PlanningSupport.created_at.desc())
+        .all()
+    )
+
+    return jsonify({
+        "reference": reference,
+        "supports": [s.to_dict() for s in supports],
     })

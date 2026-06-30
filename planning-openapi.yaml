@@ -189,6 +189,29 @@ paths:
         "404":
           description: Case not found
 
+  /cases/{reference}/supports:
+    get:
+      summary: List potential reasons for support for a planning application
+      description: |
+        Returns AI-generated potential reasons for support for a planning
+        application. Each reason is backed by relevant planning policy
+        references from the NPPF and/or the Plymouth & South West Devon
+        Joint Local Plan.
+      operationId: listSupports
+      tags:
+        - Supports
+      parameters:
+        - $ref: "#/components/parameters/CaseReference"
+      responses:
+        "200":
+          description: List of potential reasons for support
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupportsList"
+        "404":
+          description: Case not found
+
 components:
   parameters:
     CaseReference:
@@ -342,6 +365,54 @@ components:
       required:
         - reference
         - objections
+
+    PlanningSupport:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the support reason
+          example: 1
+        case_reference:
+          type: string
+          description: Reference of the associated planning case
+          example: "26/00747/CDM"
+        support_reason:
+          type: string
+          description: The grounds for support
+          example: "Contribution to local housing supply in an area with identified need"
+        ai_rationalisation:
+          type: string
+          description: |
+            AI explanation of why this is a valid potential reason for support,
+            referencing specific details from the application and citing
+            relevant planning policy.
+          example: "The proposed development contributes to meeting Plymouth's identified housing need..."
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the support reason was generated
+          example: "2026-06-30T12:30:00+00:00"
+      required:
+        - id
+        - case_reference
+        - support_reason
+        - ai_rationalisation
+
+    SupportsList:
+      type: object
+      properties:
+        reference:
+          type: string
+          description: The planning case reference
+          example: "26/00747/CDM"
+        supports:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanningSupport"
+      required:
+        - reference
+        - supports
 
     TaskAccepted:
       type: object

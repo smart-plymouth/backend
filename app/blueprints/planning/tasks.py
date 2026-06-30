@@ -968,6 +968,194 @@ def _generate_objections(metadata, document_texts, reference, analysis):
         return []
 
 
+def _generate_supports(metadata, document_texts, reference, analysis):
+    """Generate potential reasons for support using AI.
+
+    Returns a list of dicts with 'support_reason' and 'ai_rationalisation' keys.
+
+    Includes relevant policy context from the Plymouth & South West Devon
+    Joint Local Plan (JLP) and the National Planning Policy Framework (NPPF).
+    """
+    from langchain_ollama import OllamaLLM
+    from langchain_core.prompts import ChatPromptTemplate
+
+    llm = OllamaLLM(
+        model=Config.OLLAMA_MODEL,
+        base_url=Config.OLLAMA_BASE_URL,
+        temperature=0.1,
+        format="json",
+    )
+
+    metadata_text = "\n".join(f"- {k}: {v}" for k, v in metadata.items())
+
+    combined_docs = "\n\n---\n\n".join(document_texts[:10])
+    if len(combined_docs) > 15000:
+        combined_docs = combined_docs[:15000] + "\n\n[... truncated ...]"
+
+    # Load relevant policy context from JLP and NPPF via RAG
+    proposal_text = metadata.get("Proposal", metadata.get("Description", ""))
+    policy_context = _load_policy_context(
+        analysis.get("tags", []),
+        query_text=proposal_text,
+    )
+
+    # Ensure total prompt size stays within model context limits
+    if len(policy_context) > 12000:
+        policy_context = policy_context[:12000] + "\n\n[... policy context truncated ...]"
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", (
+            "You are an expert UK planning consultant. Your job is to identify MULTIPLE "
+            "SEPARATE grounds for SUPPORT of a planning application.\n\n"
+            "## YOUR PRIMARY TASK:\n"
+            "Analyse the specific planning application below and produce ALL legitimate "
+            "grounds for support that could reasonably be raised. Be EXHAUSTIVE — identify "
+            "every distinct planning benefit that this application delivers, no matter how "
+            "many or few that turns out to be. A minor extension might only have 1-2 valid "
+            "reasons for support. A large mixed-use development could have 10-15+. Let the "
+            "application drive the number, not an arbitrary target.\n\n"
+            "Each reason for support must address a DIFFERENT planning benefit "
+            "specific to THIS application. Do NOT combine multiple benefits into one entry.\n\n"
+            "Examples of separate reasons for support (each would be its own entry):\n"
+            "- Contribution to local housing supply in an area with identified need\n"
+            "- Regeneration of a brownfield/previously-developed site\n"
+            "- High quality design that respects and enhances local character\n"
+            "- Improved public realm and pedestrian connectivity\n"
+            "- Provision of affordable housing exceeding policy requirements\n"
+            "- Energy-efficient design reducing carbon emissions\n"
+            "- Job creation during construction and operational phases\n\n"
+            "Each reason for support must be grounded in the SPECIFIC details of this "
+            "application (the address, what is proposed, the site context) — not generic "
+            "planning benefits.\n\n"
+            "## POLICY CITATIONS:\n"
+            "Back each reason for support with specific policy references from the "
+            "extracts provided:\n\n"
+            "For NPPF: cite the paragraph number and chapter name, and briefly state what "
+            "it encourages. Example: 'NPPF Chapter 5, paragraph 60 states that the "
+            "Government's objective is significantly boosting the supply of homes.'\n\n"
+            "For JLP: cite the policy code and title, and the relevant criterion. Example: "
+            "'JLP Policy SPT2 (Sustainable linked neighbourhoods) supports development that "
+            "contributes to creating mixed and balanced communities.'\n\n"
+            "If the policy extracts do not contain the exact paragraph number for a point, "
+            "note which policy area is relevant and state the reference should be verified. "
+            "Do NOT invent paragraph numbers.\n\n"
+            "## JSON OUTPUT FORMAT:\n"
+            "Respond with a JSON object containing a single key \"supports\" whose value "
+            "is an array. Each element has:\n"
+            "- \"support_reason\": a short one-sentence summary of the ground for support\n"
+            "- \"ai_rationalisation\": 1-2 paragraphs explaining why this is a valid "
+            "reason to support THIS specific application, referencing application details "
+            "AND citing the relevant JLP/NPPF policy with paragraph/section numbers\n\n"
+            "## WHAT NOT TO DO:\n"
+            "- Do NOT combine multiple different benefits into a single entry\n"
+            "- Do NOT write generic reasons that could apply to any application\n"
+            "- Do NOT include reasons based on: personal benefit, property values, "
+            "or unsubstantiated claims\n"
+            "- Do NOT include a reason unless it relates to a legitimate planning matter\n"
+        )),
+        ("human", (
+            "Planning Application Reference: {reference}\n\n"
+            "## AI Assessment\n"
+            "- Impact Score: {impact_score}/10\n"
+            "- Size Score: {size_score}/10\n"
+            "- Tags: {tags}\n\n"
+            "## Application Metadata\n{metadata}\n\n"
+            "## Document Contents\n{documents}\n\n"
+            "## Relevant Planning Policy Context\n{policy_context}\n\n"
+            "Now identify ALL legitimate grounds for support specific to this application. "
+            "Be thorough — consider every planning benefit this proposal delivers. "
+            "Return JSON with key \"supports\" containing the array."
+        )),
+    ])
+
+    chain = prompt | llm
+
+    try:
+        response = chain.invoke({
+            "reference": reference,
+            "impact_score": analysis["potential_impact_score"],
+            "size_score": analysis["estimated_size"],
+            "tags": ", ".join(analysis["tags"]),
+            "metadata": metadata_text,
+            "documents": combined_docs if combined_docs else "No documents available.",
+            "policy_context": policy_context,
+        })
+
+        response_text = response.strip() if response else ""
+
+        if not response_text:
+            logger.error(
+                f"Empty response from model for supports on {reference}. "
+                f"Prompt may exceed context window."
+            )
+            return []
+
+        # Remove markdown code fences if present
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            response_text = "\n".join(lines)
+
+        # Remove <think> tags or other preamble
+        think_end = response_text.find("</think>")
+        if think_end != -1:
+            response_text = response_text[think_end + len("</think>"):].strip()
+
+        # Extract JSON array from response
+        json_start = response_text.find("[")
+        json_end = response_text.rfind("]") + 1
+        if json_start != -1 and json_end > json_start:
+            response_text = response_text[json_start:json_end]
+        else:
+            # Last-ditch: if the model returned prose but embedded JSON objects,
+            # try to extract individual {...} blocks and wrap them in an array
+            import re
+            json_objects = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text)
+            if json_objects:
+                response_text = "[" + ",".join(json_objects) + "]"
+                logger.warning(
+                    f"Extracted {len(json_objects)} JSON objects from prose "
+                    f"response for {reference}"
+                )
+            else:
+                logger.error(
+                    f"No JSON array found in supports response for {reference}. "
+                    f"Response (first 500 chars): {response_text[:500]}"
+                )
+                return []
+
+        supports = json.loads(response_text)
+
+        # Handle both bare arrays and wrapped objects like {"supports": [...]}
+        if isinstance(supports, dict):
+            # Find the first list value in the dict
+            for value in supports.values():
+                if isinstance(value, list):
+                    supports = value
+                    break
+            else:
+                logger.error(f"Supports response is a dict with no list value for {reference}")
+                return []
+
+        if not isinstance(supports, list):
+            logger.error(f"Supports response is not a list for {reference}")
+            return []
+
+        valid_supports = []
+        for item in supports:
+            if isinstance(item, dict) and "support_reason" in item and "ai_rationalisation" in item:
+                valid_supports.append({
+                    "support_reason": str(item["support_reason"]).strip(),
+                    "ai_rationalisation": str(item["ai_rationalisation"]).strip(),
+                })
+
+        return valid_supports
+
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        logger.error(f"Failed to parse supports response for {reference}: {e}")
+        return []
+
+
 @celery.task(queue="planning_analysis")
 def analyse_planning_application(reference):
     """Analyse a planning application using AI.
@@ -1129,6 +1317,41 @@ def analyse_planning_application(reference):
                 f"for {reference}"
             )
 
+            # Step 9: Generate potential reasons for support
+            supports_generated = 0
+            from app.blueprints.planning.models import PlanningSupport
+
+            logger.info(
+                f"Generating potential reasons for support for {reference} "
+                f"(impact={analysis['potential_impact_score']}, "
+                f"size={analysis['estimated_size']})"
+            )
+
+            # Remove any existing supports for this case (re-analysis)
+            PlanningSupport.query.filter_by(
+                case_reference=reference
+            ).delete()
+            db.session.commit()
+
+            supports = _generate_supports(
+                metadata, document_texts, reference, analysis
+            )
+
+            for sup_data in supports:
+                support = PlanningSupport(
+                    case_reference=reference,
+                    support_reason=sup_data["support_reason"],
+                    ai_rationalisation=sup_data["ai_rationalisation"],
+                )
+                db.session.add(support)
+                supports_generated += 1
+
+            db.session.commit()
+            logger.info(
+                f"Generated {supports_generated} potential reasons for support "
+                f"for {reference}"
+            )
+
             logger.info(
                 f"Analysis complete for {reference}: "
                 f"impact={analysis['potential_impact_score']}, "
@@ -1145,6 +1368,7 @@ def analyse_planning_application(reference):
                 "documents_downloaded": len(documents),
                 "documents_analysed": len(document_texts),
                 "objections_generated": objections_generated,
+                "supports_generated": supports_generated,
             }
 
         except Exception as e:

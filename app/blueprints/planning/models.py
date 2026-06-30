@@ -30,6 +30,9 @@ class PlanningCase(db.Model):
     objections = db.relationship(
         "PlanningObjection", back_populates="case", lazy="dynamic"
     )
+    supports = db.relationship(
+        "PlanningSupport", back_populates="case", lazy="dynamic"
+    )
 
     def to_dict(self):
         return {
@@ -78,6 +81,34 @@ class PlanningObjection(db.Model):
             "id": self.id,
             "case_reference": self.case_reference,
             "objection": self.objection,
+            "ai_rationalisation": self.ai_rationalisation,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PlanningSupport(db.Model):
+    __tablename__ = "planning_supports"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    case_reference = db.Column(
+        db.String(50),
+        db.ForeignKey("planning_cases.reference"),
+        nullable=False,
+        index=True,
+    )
+    support_reason = db.Column(db.UnicodeText, nullable=False)
+    ai_rationalisation = db.Column(db.UnicodeText, nullable=False)
+    created_at = db.Column(
+        db.DateTime(timezone=True), server_default=db.func.now(), nullable=False
+    )
+
+    case = db.relationship("PlanningCase", back_populates="supports")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "case_reference": self.case_reference,
+            "support_reason": self.support_reason,
             "ai_rationalisation": self.ai_rationalisation,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
