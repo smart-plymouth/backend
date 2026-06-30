@@ -44,6 +44,7 @@ def list_cases():
         like_term = f"%{search}%"
         query = query.filter(
             or_(
+                PlanningCase.reference.ilike(like_term),
                 PlanningCase.proposal.ilike(like_term),
                 PlanningCase.address.ilike(like_term),
                 cast(PlanningCase.received_date, String).ilike(like_term),
