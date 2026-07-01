@@ -538,61 +538,18 @@ def _extract_text_from_pdf(filepath):
         return ""
 
 
-def _ensure_ollama_model(base_url, model_name):
-    """Check if the model exists on the Ollama server and pull it if not.
-
-    Returns True if the model is available, False if it could not be obtained.
-    """
-    # Check if model exists
-    try:
-        response = requests.get(f"{base_url}/api/tags", timeout=30)
-        response.raise_for_status()
-        models = response.json().get("models", [])
-        model_names = [m.get("name", "").split(":")[0] for m in models]
-        if model_name in model_names or f"{model_name}:latest" in [
-            m.get("name", "") for m in models
-        ]:
-            logger.info(f"Model '{model_name}' already available on Ollama server")
-            return True
-    except requests.RequestException as e:
-        logger.error(f"Failed to check Ollama models: {e}")
-        return False
-
-    # Model not found, pull it
-    logger.info(f"Model '{model_name}' not found, pulling from Ollama...")
-    try:
-        pull_response = requests.post(
-            f"{base_url}/api/pull",
-            json={"name": model_name},
-            timeout=600,  # Model downloads can take a while
-            stream=True,
-        )
-        pull_response.raise_for_status()
-        # Consume the stream to wait for completion
-        for line in pull_response.iter_lines():
-            if line:
-                status = json.loads(line)
-                if status.get("status") == "success":
-                    logger.info(f"Model '{model_name}' pulled successfully")
-                    return True
-        # If we got here without error, assume success
-        return True
-    except requests.RequestException as e:
-        logger.error(f"Failed to pull model '{model_name}': {e}")
-        return False
-
-
 def _run_ai_analysis(metadata, document_texts, reference):
-    """Run AI analysis using LangChain with Ollama (deepseek-r1).
+    """Run AI analysis using LangChain with nscale OpenAI-compatible API (Qwen3-32B).
 
     Returns a dict with potential_impact_score, estimated_size, and tags.
     """
-    from langchain_ollama import OllamaLLM
+    from langchain_openai import ChatOpenAI
     from langchain_core.prompts import ChatPromptTemplate
 
-    llm = OllamaLLM(
-        model=Config.OLLAMA_MODEL,
-        base_url=Config.OLLAMA_BASE_URL,
+    llm = ChatOpenAI(
+        model=Config.LLM_MODEL,
+        base_url=Config.NSCALE_BASE_URL,
+        api_key=Config.NSCALE_TOKEN,
         temperature=0.1,
     )
 
@@ -668,7 +625,7 @@ def _run_ai_analysis(metadata, document_texts, reference):
         })
 
         # Parse the JSON response - handle potential markdown wrapping
-        response_text = response.strip()
+        response_text = response.content.strip() if hasattr(response, 'content') else str(response).strip()
         # Remove markdown code fences if present
         if response_text.startswith("```"):
             lines = response_text.split("\n")
@@ -732,7 +689,7 @@ def _load_policy_context(tags, query_text=""):
         A formatted string of relevant policy passages.
     """
     from langchain_chroma import Chroma
-    from langchain_ollama import OllamaEmbeddings
+    from langchain_openai import OpenAIEmbeddings
 
     vectorstore_dir = Config.POLICY_VECTORSTORE_DIR
 
@@ -741,9 +698,10 @@ def _load_policy_context(tags, query_text=""):
         return "No policy context available."
 
     try:
-        embeddings = OllamaEmbeddings(
-            model=Config.OLLAMA_EMBEDDING_MODEL,
-            base_url=Config.OLLAMA_BASE_URL,
+        embeddings = OpenAIEmbeddings(
+            model=Config.EMBEDDING_MODEL,
+            base_url=Config.NSCALE_BASE_URL,
+            api_key=Config.NSCALE_TOKEN,
         )
 
         vectorstore = Chroma(
@@ -792,14 +750,15 @@ def _generate_objections(metadata, document_texts, reference, analysis):
     Includes relevant policy context from the Plymouth & South West Devon
     Joint Local Plan (JLP) and the National Planning Policy Framework (NPPF).
     """
-    from langchain_ollama import OllamaLLM
+    from langchain_openai import ChatOpenAI
     from langchain_core.prompts import ChatPromptTemplate
 
-    llm = OllamaLLM(
-        model=Config.OLLAMA_MODEL,
-        base_url=Config.OLLAMA_BASE_URL,
+    llm = ChatOpenAI(
+        model=Config.LLM_MODEL,
+        base_url=Config.NSCALE_BASE_URL,
+        api_key=Config.NSCALE_TOKEN,
         temperature=0.1,
-        format="json",
+        model_kwargs={"response_format": {"type": "json_object"}},
     )
 
     metadata_text = "\n".join(f"- {k}: {v}" for k, v in metadata.items())
@@ -893,7 +852,7 @@ def _generate_objections(metadata, document_texts, reference, analysis):
             "policy_context": policy_context,
         })
 
-        response_text = response.strip() if response else ""
+        response_text = response.content.strip() if hasattr(response, 'content') else str(response).strip()
 
         if not response_text:
             logger.error(
@@ -919,22 +878,28 @@ def _generate_objections(metadata, document_texts, reference, analysis):
         if json_start != -1 and json_end > json_start:
             response_text = response_text[json_start:json_end]
         else:
-            # Last-ditch: if the model returned prose but embedded JSON objects,
-            # try to extract individual {...} blocks and wrap them in an array
-            import re
-            json_objects = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text)
-            if json_objects:
-                response_text = "[" + ",".join(json_objects) + "]"
-                logger.warning(
-                    f"Extracted {len(json_objects)} JSON objects from prose "
-                    f"response for {reference}"
-                )
+            # Try parsing as a JSON object with an "objections" key
+            obj_start = response_text.find("{")
+            obj_end = response_text.rfind("}") + 1
+            if obj_start != -1 and obj_end > obj_start:
+                response_text = response_text[obj_start:obj_end]
             else:
-                logger.error(
-                    f"No JSON array found in objections response for {reference}. "
-                    f"Response (first 500 chars): {response_text[:500]}"
-                )
-                return []
+                # Last-ditch: if the model returned prose but embedded JSON objects,
+                # try to extract individual {...} blocks and wrap them in an array
+                import re
+                json_objects = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text)
+                if json_objects:
+                    response_text = "[" + ",".join(json_objects) + "]"
+                    logger.warning(
+                        f"Extracted {len(json_objects)} JSON objects from prose "
+                        f"response for {reference}"
+                    )
+                else:
+                    logger.error(
+                        f"No JSON array found in objections response for {reference}. "
+                        f"Response (first 500 chars): {response_text[:500]}"
+                    )
+                    return []
 
         objections = json.loads(response_text)
 
@@ -976,14 +941,15 @@ def _generate_supports(metadata, document_texts, reference, analysis):
     Includes relevant policy context from the Plymouth & South West Devon
     Joint Local Plan (JLP) and the National Planning Policy Framework (NPPF).
     """
-    from langchain_ollama import OllamaLLM
+    from langchain_openai import ChatOpenAI
     from langchain_core.prompts import ChatPromptTemplate
 
-    llm = OllamaLLM(
-        model=Config.OLLAMA_MODEL,
-        base_url=Config.OLLAMA_BASE_URL,
+    llm = ChatOpenAI(
+        model=Config.LLM_MODEL,
+        base_url=Config.NSCALE_BASE_URL,
+        api_key=Config.NSCALE_TOKEN,
         temperature=0.1,
-        format="json",
+        model_kwargs={"response_format": {"type": "json_object"}},
     )
 
     metadata_text = "\n".join(f"- {k}: {v}" for k, v in metadata.items())
@@ -1081,7 +1047,7 @@ def _generate_supports(metadata, document_texts, reference, analysis):
             "policy_context": policy_context,
         })
 
-        response_text = response.strip() if response else ""
+        response_text = response.content.strip() if hasattr(response, 'content') else str(response).strip()
 
         if not response_text:
             logger.error(
@@ -1107,22 +1073,28 @@ def _generate_supports(metadata, document_texts, reference, analysis):
         if json_start != -1 and json_end > json_start:
             response_text = response_text[json_start:json_end]
         else:
-            # Last-ditch: if the model returned prose but embedded JSON objects,
-            # try to extract individual {...} blocks and wrap them in an array
-            import re
-            json_objects = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text)
-            if json_objects:
-                response_text = "[" + ",".join(json_objects) + "]"
-                logger.warning(
-                    f"Extracted {len(json_objects)} JSON objects from prose "
-                    f"response for {reference}"
-                )
+            # Try parsing as a JSON object with a "supports" key
+            obj_start = response_text.find("{")
+            obj_end = response_text.rfind("}") + 1
+            if obj_start != -1 and obj_end > obj_start:
+                response_text = response_text[obj_start:obj_end]
             else:
-                logger.error(
-                    f"No JSON array found in supports response for {reference}. "
-                    f"Response (first 500 chars): {response_text[:500]}"
-                )
-                return []
+                # Last-ditch: if the model returned prose but embedded JSON objects,
+                # try to extract individual {...} blocks and wrap them in an array
+                import re
+                json_objects = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text)
+                if json_objects:
+                    response_text = "[" + ",".join(json_objects) + "]"
+                    logger.warning(
+                        f"Extracted {len(json_objects)} JSON objects from prose "
+                        f"response for {reference}"
+                    )
+                else:
+                    logger.error(
+                        f"No JSON array found in supports response for {reference}. "
+                        f"Response (first 500 chars): {response_text[:500]}"
+                    )
+                    return []
 
         supports = json.loads(response_text)
 
@@ -1165,11 +1137,11 @@ def analyse_planning_application(reference):
     2. Visits the planning portal for the given application
     3. Downloads all associated documents
     4. Collects metadata from the portal
-    5. Uses LangChain + Ollama (deepseek-r1) to analyse the application
+    5. Uses LangChain + nscale (Qwen3-32B) to analyse the application
     6. Scores the application for scale and potential impact
     7. Extracts descriptive tags
 
-    Concurrency is limited to 1 to avoid overwhelming the Ollama server.
+    Concurrency is limited to 1 to avoid overwhelming the LLM API.
 
     Args:
         reference: The planning application reference (e.g. "26/00747/CDM")
@@ -1248,21 +1220,7 @@ def analyse_planning_application(reference):
                     0, f"[Application Proposal]\n{case.proposal}"
                 )
 
-            # Step 5: Ensure the Ollama model is available
-            logger.info("Checking Ollama model availability...")
-            model_ready = _ensure_ollama_model(
-                Config.OLLAMA_BASE_URL, Config.OLLAMA_MODEL
-            )
-            if not model_ready:
-                return {
-                    "status": "error",
-                    "message": (
-                        f"Ollama model '{Config.OLLAMA_MODEL}' is not available "
-                        f"and could not be pulled"
-                    ),
-                }
-
-            # Step 6: Run AI analysis
+            # Step 5: Run AI analysis
             logger.info(f"Running AI analysis for {reference}")
             analysis = _run_ai_analysis(metadata, document_texts, reference)
 
@@ -1272,7 +1230,7 @@ def analyse_planning_application(reference):
                     "message": "AI analysis failed to produce valid results",
                 }
 
-            # Step 7: Update the database record
+            # Step 6: Update the database record
             case.ai_analysis = True
             case.potential_impact_score = analysis["potential_impact_score"]
             case.estimated_size = analysis["estimated_size"]
@@ -1282,7 +1240,7 @@ def analyse_planning_application(reference):
             case.cons = analysis["cons"]
             db.session.commit()
 
-            # Step 8: Generate potential objections
+            # Step 7: Generate potential objections
             objections_generated = 0
             from app.blueprints.planning.models import PlanningObjection
 
@@ -1317,7 +1275,7 @@ def analyse_planning_application(reference):
                 f"for {reference}"
             )
 
-            # Step 9: Generate potential reasons for support
+            # Step 8: Generate potential reasons for support
             supports_generated = 0
             from app.blueprints.planning.models import PlanningSupport
 

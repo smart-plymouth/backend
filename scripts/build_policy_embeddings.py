@@ -4,19 +4,19 @@
 This script runs LOCALLY (not in the container) to:
 1. Read the policy PDFs from data/policy/
 2. Split them into chunks
-3. Embed them using Ollama (nomic-embed-text)
+3. Embed them using the nscale OpenAI-compatible API (Qwen3-Embedding-8B)
 4. Persist the ChromaDB vector store to data/policy_vectorstore/
 
 The resulting vector store directory is then committed to the repo and
 baked into the Docker image so the application can query it at runtime
-without needing access to the Ollama embedding model.
+without needing access to the embedding model.
 
 Usage:
-    python scripts/build_policy_embeddings.py
+    NSCALE_TOKEN=your-token python scripts/build_policy_embeddings.py
 
 Requires:
-    - Ollama running locally or at OLLAMA_BASE_URL with nomic-embed-text available
-    - pip install chromadb langchain-chroma langchain-ollama langchain pypdf
+    - NSCALE_TOKEN environment variable set
+    - pip install chromadb langchain-chroma langchain-openai langchain pypdf
 """
 
 import os
@@ -25,12 +25,13 @@ import sys
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_ollama import OllamaEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 
 # Configuration
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://172.20.40.8:11434")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")
+NSCALE_BASE_URL = os.environ.get("NSCALE_BASE_URL", "https://inference.api.nscale.com/v1")
+NSCALE_TOKEN = os.environ.get("NSCALE_TOKEN", "")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 POLICY_DIR = os.path.join(BASE_DIR, "data", "policy")
@@ -58,11 +59,16 @@ def main():
     print("=" * 60)
     print("Building policy vector store")
     print("=" * 60)
-    print(f"Ollama URL: {OLLAMA_BASE_URL}")
+    print(f"nscale URL: {NSCALE_BASE_URL}")
     print(f"Embedding model: {EMBEDDING_MODEL}")
     print(f"Policy dir: {POLICY_DIR}")
     print(f"Output dir: {VECTORSTORE_DIR}")
     print()
+
+    if not NSCALE_TOKEN:
+        print("ERROR: NSCALE_TOKEN environment variable is not set.")
+        print("Usage: NSCALE_TOKEN=your-token python scripts/build_policy_embeddings.py")
+        sys.exit(1)
 
     # Check PDFs exist
     for pdf_info in POLICY_PDFS:
@@ -107,9 +113,10 @@ def main():
     print(f"\nCreating embeddings using {EMBEDDING_MODEL}...")
     print("  (This may take several minutes for large documents)")
 
-    embeddings = OllamaEmbeddings(
+    embeddings = OpenAIEmbeddings(
         model=EMBEDDING_MODEL,
-        base_url=OLLAMA_BASE_URL,
+        base_url=NSCALE_BASE_URL,
+        api_key=NSCALE_TOKEN,
     )
 
     # Build the vector store in batches to show progress

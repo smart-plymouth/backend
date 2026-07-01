@@ -11,11 +11,12 @@ class Config:
     CELERY_RESULT_BACKEND = os.environ.get(
         "CELERY_RESULT_BACKEND", "redis://localhost:6379/0"
     )
-    OLLAMA_BASE_URL = os.environ.get(
-        "OLLAMA_BASE_URL", "http://172.20.40.8:11434"
+    NSCALE_BASE_URL = os.environ.get(
+        "NSCALE_BASE_URL", "https://inference.api.nscale.com/v1"
     )
-    OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:e4b")
-    OLLAMA_EMBEDDING_MODEL = os.environ.get("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
+    NSCALE_TOKEN = os.environ.get("NSCALE_TOKEN", "")
+    LLM_MODEL = os.environ.get("LLM_MODEL", "Qwen/Qwen3-32B")
+    EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B")
     POLICY_VECTORSTORE_DIR = os.environ.get(
         "POLICY_VECTORSTORE_DIR",
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "policy_vectorstore"),
