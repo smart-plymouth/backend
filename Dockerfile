@@ -32,7 +32,7 @@ RUN pip install --no-cache-dir \
 # LangChain core and OpenAI-compatible client
 RUN pip install --no-cache-dir \
     langchain-core==1.4.1 \
-    langchain-openai==0.3.18
+    langchain-openai==1.1.1
 
 # ChromaDB heavy dependencies split across layers to stay under 100MB each
 RUN pip install --no-cache-dir \
