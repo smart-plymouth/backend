@@ -29,10 +29,10 @@ RUN pip install --no-cache-dir \
     pypdf==5.4.0 \
     cryptography==44.0.3
 
-# LangChain core and Ollama
+# LangChain core and OpenAI-compatible client
 RUN pip install --no-cache-dir \
     langchain-core==1.4.1 \
-    langchain-ollama==1.1.0
+    langchain-openai==0.3.18
 
 # ChromaDB heavy dependencies split across layers to stay under 100MB each
 RUN pip install --no-cache-dir \
