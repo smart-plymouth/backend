@@ -243,11 +243,18 @@ spec:
               value: redis://redis:6379/0
             - name: CELERY_RESULT_BACKEND
               value: redis://redis:6379/0
-            - name: OLLAMA_BASE_URL
-              value: http://172.20.40.8:11434
-            - name: OLLAMA_MODEL
-              value: gemma4:e4b
-          command: ["celery", "-A", "app.celery_app.celery", "worker", "--queues=planning_analysis", "--concurrency=1", "--loglevel=info"]
+            - name: NSCALE_BASE_URL
+              value: https://inference.api.nscale.com/v1
+            - name: NSCALE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: nscale-credentials
+                  key: token
+            - name: LLM_MODEL
+              value: Qwen/Qwen3-32B
+            - name: EMBEDDING_MODEL
+              value: Qwen/Qwen3-Embedding-8B
+          command: ["celery", "-A", "app.celery_app.celery", "worker", "--queues=planning_analysis", "--concurrency=4", "--loglevel=info"]
 
 ---
 # Celery Flower Deployment
