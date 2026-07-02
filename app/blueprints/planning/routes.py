@@ -305,16 +305,24 @@ def generate_letter(reference):
         "- Format the entire letter in Markdown\n"
         "- Use **bold** for the recipient name and application reference\n"
         "- Use headings (##) for major sections where appropriate\n"
-        "- Address it to: Planning Department, Plymouth City Council\n"
+        "- Address it to:\n"
+        "  Planning Department\n"
+        "  Floor 2, Ballard House\n"
+        "  West Hoe Road\n"
+        "  Plymouth\n"
+        "  PL1 3BJ\n"
+        "- Use this EXACT address — do NOT make up or alter it\n"
+        "- Do NOT include a placeholder or space for the sender's address\n"
+        "- Use today's actual date (provided below) — do NOT use a placeholder\n"
         "- Reference the planning application number clearly\n"
         "- Use the reasons provided as the basis for the letter\n"
         "- Cite specific planning policies where mentioned in the reasons\n"
         "- Keep the language accessible but professional\n"
         "- Sign off with the author's name\n"
         "- Do NOT invent additional reasons beyond those provided\n"
-        "- Do NOT include the author's address (they will add it themselves)\n"
-        "- Include today's date at the top of the letter\n"
     )
+
+    today_str = date.today().strftime("%-d %B %Y")
 
     user_message = (
         f"{letter_instruction}\n\n"
@@ -322,6 +330,7 @@ def generate_letter(reference):
         f"- Reference: {reference}\n"
         f"- Address: {case.address}\n"
         f"- Proposal: {case.proposal}\n\n"
+        f"## Today's Date\n{today_str}\n\n"
         f"## Reasons\n{reasons_text}\n\n"
         f"## Author\n"
         f"- Name: {first_name} {last_name}\n\n"
