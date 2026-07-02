@@ -1,6 +1,7 @@
 from datetime import date, timedelta
+import json
 
-from flask import jsonify, request
+from flask import jsonify, request, Response, stream_with_context
 from sqlalchemy import cast, or_, String
 
 from app.blueprints.planning import planning_bp
@@ -215,16 +216,20 @@ def list_supports(reference):
 def generate_letter(reference):
     """Generate an objection or support letter for a planning application.
 
-    Synchronously calls the nscale LLM API to generate a formal letter
-    based on the AI-generated objection or support reasons for the case.
+    Streams the response as Server-Sent Events (SSE) so the client can
+    display the letter being written in real time.
 
     Request body (JSON):
         first_name  - Author's first name (required)
         last_name   - Author's last name (required)
         letter_type - Either "objection" or "support" (required)
+
+    SSE event types:
+        token  - A chunk of the letter text (data is the raw text fragment)
+        done   - Generation complete (data is JSON with metadata)
+        error  - An error occurred (data is JSON with error message)
     """
-    from langchain_openai import ChatOpenAI
-    from langchain_core.prompts import ChatPromptTemplate
+    from openai import OpenAI
 
     case = PlanningCase.query.get_or_404(reference)
 
@@ -292,68 +297,76 @@ def generate_letter(reference):
             "appropriate. The tone should be positive, constructive and professional."
         )
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", (
-            "You are an expert UK planning consultant who drafts formal letters to "
-            "planning authorities on behalf of members of the public.\n\n"
-            "Rules:\n"
-            "- Write in formal letter format with appropriate structure\n"
-            "- Format the entire letter in Markdown\n"
-            "- Use **bold** for the recipient name and application reference\n"
-            "- Use headings (##) for major sections where appropriate\n"
-            "- Address it to: Planning Department, Plymouth City Council\n"
-            "- Reference the planning application number clearly\n"
-            "- Use the reasons provided as the basis for the letter\n"
-            "- Cite specific planning policies where mentioned in the reasons\n"
-            "- Keep the language accessible but professional\n"
-            "- Sign off with the author's name\n"
-            "- Do NOT invent additional reasons beyond those provided\n"
-            "- Do NOT include the author's address (they will add it themselves)\n"
-            "- Include today's date at the top of the letter\n"
-        )),
-        ("human", (
-            "{instruction}\n\n"
-            "## Application Details\n"
-            "- Reference: {reference}\n"
-            "- Address: {address}\n"
-            "- Proposal: {proposal}\n\n"
-            "## Reasons\n{reasons}\n\n"
-            "## Author\n"
-            "- Name: {first_name} {last_name}\n\n"
-            "Generate the letter now."
-        )),
-    ])
-
-    llm = ChatOpenAI(
-        model=Config.LLM_MODEL,
-        base_url=Config.NSCALE_BASE_URL,
-        api_key=Config.NSCALE_TOKEN,
-        temperature=0.3,
+    system_prompt = (
+        "You are an expert UK planning consultant who drafts formal letters to "
+        "planning authorities on behalf of members of the public.\n\n"
+        "Rules:\n"
+        "- Write in formal letter format with appropriate structure\n"
+        "- Format the entire letter in Markdown\n"
+        "- Use **bold** for the recipient name and application reference\n"
+        "- Use headings (##) for major sections where appropriate\n"
+        "- Address it to: Planning Department, Plymouth City Council\n"
+        "- Reference the planning application number clearly\n"
+        "- Use the reasons provided as the basis for the letter\n"
+        "- Cite specific planning policies where mentioned in the reasons\n"
+        "- Keep the language accessible but professional\n"
+        "- Sign off with the author's name\n"
+        "- Do NOT invent additional reasons beyond those provided\n"
+        "- Do NOT include the author's address (they will add it themselves)\n"
+        "- Include today's date at the top of the letter\n"
     )
 
-    chain = prompt | llm
+    user_message = (
+        f"{letter_instruction}\n\n"
+        f"## Application Details\n"
+        f"- Reference: {reference}\n"
+        f"- Address: {case.address}\n"
+        f"- Proposal: {case.proposal}\n\n"
+        f"## Reasons\n{reasons_text}\n\n"
+        f"## Author\n"
+        f"- Name: {first_name} {last_name}\n\n"
+        f"Generate the letter now."
+    )
 
-    try:
-        response = chain.invoke({
-            "instruction": letter_instruction,
-            "reference": reference,
-            "address": case.address,
-            "proposal": case.proposal,
-            "reasons": reasons_text,
-            "first_name": first_name,
-            "last_name": last_name,
-        })
+    def generate():
+        try:
+            client = OpenAI(
+                base_url=Config.NSCALE_BASE_URL,
+                api_key=Config.NSCALE_TOKEN,
+            )
 
-        letter_text = response.content if hasattr(response, 'content') else str(response)
+            stream = client.chat.completions.create(
+                model=Config.LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.3,
+                stream=True,
+            )
 
-        return jsonify({
-            "reference": reference,
-            "letter_type": letter_type,
-            "author": f"{first_name} {last_name}",
-            "letter": letter_text.strip(),
-        })
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    token = chunk.choices[0].delta.content
+                    yield f"event: token\ndata: {json.dumps(token)}\n\n"
 
-    except Exception as e:
-        return jsonify({
-            "error": f"Failed to generate letter: {str(e)}"
-        }), 502
+            # Signal completion with metadata
+            done_data = json.dumps({
+                "reference": reference,
+                "letter_type": letter_type,
+                "author": f"{first_name} {last_name}",
+            })
+            yield f"event: done\ndata: {done_data}\n\n"
+
+        except Exception as e:
+            error_data = json.dumps({"error": f"Failed to generate letter: {str(e)}"})
+            yield f"event: error\ndata: {error_data}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

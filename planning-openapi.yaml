@@ -214,12 +214,34 @@ paths:
 
   /cases/{reference}/generate-letter:
     post:
-      summary: Generate an objection or support letter
+      summary: Generate an objection or support letter (streamed)
       description: |
-        Synchronously generates a formal letter to the planning authority
-        either objecting to or supporting a planning application. Uses the
-        AI-generated objection or support reasons as the basis for the letter.
-        The case must have been AI-analysed first.
+        Generates a formal letter to the planning authority either objecting
+        to or supporting a planning application. The response is streamed as
+        Server-Sent Events (SSE) so the client can render the letter in real
+        time as tokens arrive.
+
+        The case must have been AI-analysed first so that objection or support
+        reasons are available.
+
+        ## SSE Event Types
+
+        | Event   | Data format | Description |
+        |---------|-------------|-------------|
+        | `token` | JSON string | A chunk of letter text (the raw text fragment) |
+        | `done`  | JSON object | Generation complete — contains `reference`, `letter_type`, `author` |
+        | `error` | JSON object | An error occurred — contains `error` message |
+
+        ## Client Example (JavaScript)
+
+        ```javascript
+        const evtSource = new EventSource('/api/planning/v1.0/cases/26%2F00747%2FCDM/generate-letter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ first_name: 'Jane', last_name: 'Smith', letter_type: 'objection' })
+        });
+        // Or use fetch with ReadableStream for POST + SSE
+        ```
       operationId: generateLetter
       tags:
         - Letters
@@ -233,11 +255,14 @@ paths:
               $ref: "#/components/schemas/GenerateLetterRequest"
       responses:
         "200":
-          description: Successfully generated letter
+          description: Streaming letter generation (SSE)
           content:
-            application/json:
+            text/event-stream:
               schema:
-                $ref: "#/components/schemas/GenerateLetterResponse"
+                type: string
+                description: |
+                  Server-Sent Events stream. Each event has a type
+                  (token, done, or error) and JSON data payload.
         "400":
           description: Invalid request (missing fields or invalid letter_type)
           content:
@@ -246,12 +271,6 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Case not found or no reasons available
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "502":
-          description: LLM inference failure
           content:
             application/json:
               schema:
@@ -556,31 +575,3 @@ components:
         - first_name
         - last_name
         - letter_type
-
-    GenerateLetterResponse:
-      type: object
-      properties:
-        reference:
-          type: string
-          description: The planning case reference
-          example: "26/00747/CDM"
-        letter_type:
-          type: string
-          enum:
-            - objection
-            - support
-          description: The type of letter generated
-          example: "objection"
-        author:
-          type: string
-          description: Full name of the letter author
-          example: "Jane Smith"
-        letter:
-          type: string
-          description: The full generated letter text
-          example: "Planning Department\nPlymouth City Council\n\n2 July 2026\n\nDear Sir/Madam,\n\nRe: Planning Application 26/00747/CDM..."
-      required:
-        - reference
-        - letter_type
-        - author
-        - letter
