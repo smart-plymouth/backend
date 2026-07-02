@@ -320,6 +320,13 @@ def generate_letter(reference):
         "- Keep the language accessible but professional\n"
         "- Sign off with the author's name\n"
         "- Do NOT invent additional reasons beyond those provided\n"
+        "- ONLY make claims about things explicitly mentioned in the application "
+        "details and reasons provided. Do NOT assume or invent facts about the "
+        "surrounding area, nearby landmarks, traffic conditions, local amenities, "
+        "or any other context that is not directly stated in the information given. "
+        "If it is not in the application metadata or the reasons, do not mention it.\n"
+        "- Do NOT generate generic facts about Plymouth or assume the application "
+        "may affect locations or facilities not referenced in the provided details.\n"
     )
 
     today_str = date.today().strftime("%-d %B %Y")
