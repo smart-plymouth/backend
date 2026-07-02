@@ -212,6 +212,51 @@ paths:
         "404":
           description: Case not found
 
+  /cases/{reference}/generate-letter:
+    post:
+      summary: Generate an objection or support letter
+      description: |
+        Synchronously generates a formal letter to the planning authority
+        either objecting to or supporting a planning application. Uses the
+        AI-generated objection or support reasons as the basis for the letter.
+        The case must have been AI-analysed first.
+      operationId: generateLetter
+      tags:
+        - Letters
+      parameters:
+        - $ref: "#/components/parameters/CaseReference"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateLetterRequest"
+      responses:
+        "200":
+          description: Successfully generated letter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateLetterResponse"
+        "400":
+          description: Invalid request (missing fields or invalid letter_type)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Case not found or no reasons available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: LLM inference failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 components:
   parameters:
     CaseReference:
@@ -488,3 +533,54 @@ components:
           example: "Invalid received_date format. Use YYYY-MM-DD."
       required:
         - error
+
+    GenerateLetterRequest:
+      type: object
+      properties:
+        first_name:
+          type: string
+          description: Author's first name
+          example: "Jane"
+        last_name:
+          type: string
+          description: Author's last name
+          example: "Smith"
+        letter_type:
+          type: string
+          enum:
+            - objection
+            - support
+          description: Whether to generate an objection or support letter
+          example: "objection"
+      required:
+        - first_name
+        - last_name
+        - letter_type
+
+    GenerateLetterResponse:
+      type: object
+      properties:
+        reference:
+          type: string
+          description: The planning case reference
+          example: "26/00747/CDM"
+        letter_type:
+          type: string
+          enum:
+            - objection
+            - support
+          description: The type of letter generated
+          example: "objection"
+        author:
+          type: string
+          description: Full name of the letter author
+          example: "Jane Smith"
+        letter:
+          type: string
+          description: The full generated letter text
+          example: "Planning Department\nPlymouth City Council\n\n2 July 2026\n\nDear Sir/Madam,\n\nRe: Planning Application 26/00747/CDM..."
+      required:
+        - reference
+        - letter_type
+        - author
+        - letter

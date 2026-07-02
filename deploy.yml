@@ -164,6 +164,15 @@ spec:
               value: redis://redis:6379/0
             - name: SECRET_KEY
               value: change-me-in-production
+            - name: NSCALE_BASE_URL
+              value: https://inference.api.nscale.com/v1
+            - name: NSCALE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: nscale-credentials
+                  key: token
+            - name: LLM_MODEL
+              value: Qwen/Qwen3-32B
           command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "wsgi:app"]
 
 ---

@@ -5,6 +5,7 @@ from sqlalchemy import cast, or_, String
 
 from app.blueprints.planning import planning_bp
 from app.blueprints.planning.models import PlanningCase, PlanningObjection, PlanningSupport
+from app.config import Config
 
 
 def _parse_date(value):
@@ -208,3 +209,151 @@ def list_supports(reference):
         "reference": reference,
         "supports": [s.to_dict() for s in supports],
     })
+
+
+@planning_bp.route("/cases/<path:reference>/generate-letter", methods=["POST"])
+def generate_letter(reference):
+    """Generate an objection or support letter for a planning application.
+
+    Synchronously calls the nscale LLM API to generate a formal letter
+    based on the AI-generated objection or support reasons for the case.
+
+    Request body (JSON):
+        first_name  - Author's first name (required)
+        last_name   - Author's last name (required)
+        letter_type - Either "objection" or "support" (required)
+    """
+    from langchain_openai import ChatOpenAI
+    from langchain_core.prompts import ChatPromptTemplate
+
+    case = PlanningCase.query.get_or_404(reference)
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body must be JSON"}), 400
+
+    first_name = data.get("first_name")
+    last_name = data.get("last_name")
+    letter_type = data.get("letter_type")
+
+    if not first_name or not last_name:
+        return jsonify({"error": "first_name and last_name are required"}), 400
+
+    if letter_type not in ("objection", "support"):
+        return jsonify({"error": "letter_type must be 'objection' or 'support'"}), 400
+
+    # Gather the reasons for the letter
+    if letter_type == "objection":
+        records = (
+            PlanningObjection.query
+            .filter_by(case_reference=reference)
+            .order_by(PlanningObjection.created_at.desc())
+            .all()
+        )
+        if not records:
+            return jsonify({
+                "error": "No objection reasons available for this case. "
+                         "Run AI analysis first."
+            }), 404
+        reasons_text = "\n\n".join(
+            f"**{obj.objection}**\n{obj.ai_rationalisation}"
+            for obj in records
+        )
+    else:
+        records = (
+            PlanningSupport.query
+            .filter_by(case_reference=reference)
+            .order_by(PlanningSupport.created_at.desc())
+            .all()
+        )
+        if not records:
+            return jsonify({
+                "error": "No support reasons available for this case. "
+                         "Run AI analysis first."
+            }), 404
+        reasons_text = "\n\n".join(
+            f"**{s.support_reason}**\n{s.ai_rationalisation}"
+            for s in records
+        )
+
+    # Build the prompt
+    if letter_type == "objection":
+        letter_instruction = (
+            "Write a formal letter of objection to the planning authority regarding "
+            "the planning application described below. The letter should clearly state "
+            "the grounds for objection, referencing relevant planning policy where "
+            "appropriate. The tone should be firm but polite and professional."
+        )
+    else:
+        letter_instruction = (
+            "Write a formal letter of support to the planning authority regarding "
+            "the planning application described below. The letter should clearly state "
+            "the reasons for support, referencing relevant planning policy where "
+            "appropriate. The tone should be positive, constructive and professional."
+        )
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", (
+            "You are an expert UK planning consultant who drafts formal letters to "
+            "planning authorities on behalf of members of the public.\n\n"
+            "Rules:\n"
+            "- Write in formal letter format with appropriate structure\n"
+            "- Format the entire letter in Markdown\n"
+            "- Use **bold** for the recipient name and application reference\n"
+            "- Use headings (##) for major sections where appropriate\n"
+            "- Address it to: Planning Department, Plymouth City Council\n"
+            "- Reference the planning application number clearly\n"
+            "- Use the reasons provided as the basis for the letter\n"
+            "- Cite specific planning policies where mentioned in the reasons\n"
+            "- Keep the language accessible but professional\n"
+            "- Sign off with the author's name\n"
+            "- Do NOT invent additional reasons beyond those provided\n"
+            "- Do NOT include the author's address (they will add it themselves)\n"
+            "- Include today's date at the top of the letter\n"
+        )),
+        ("human", (
+            "{instruction}\n\n"
+            "## Application Details\n"
+            "- Reference: {reference}\n"
+            "- Address: {address}\n"
+            "- Proposal: {proposal}\n\n"
+            "## Reasons\n{reasons}\n\n"
+            "## Author\n"
+            "- Name: {first_name} {last_name}\n\n"
+            "Generate the letter now."
+        )),
+    ])
+
+    llm = ChatOpenAI(
+        model=Config.LLM_MODEL,
+        base_url=Config.NSCALE_BASE_URL,
+        api_key=Config.NSCALE_TOKEN,
+        temperature=0.3,
+    )
+
+    chain = prompt | llm
+
+    try:
+        response = chain.invoke({
+            "instruction": letter_instruction,
+            "reference": reference,
+            "address": case.address,
+            "proposal": case.proposal,
+            "reasons": reasons_text,
+            "first_name": first_name,
+            "last_name": last_name,
+        })
+
+        letter_text = response.content if hasattr(response, 'content') else str(response)
+
+        return jsonify({
+            "reference": reference,
+            "letter_type": letter_type,
+            "author": f"{first_name} {last_name}",
+            "letter": letter_text.strip(),
+        })
+
+    except Exception as e:
+        return jsonify({
+            "error": f"Failed to generate letter: {str(e)}"
+        }), 502
