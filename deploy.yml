@@ -173,7 +173,7 @@ spec:
                   key: token
             - name: LLM_MODEL
               value: Qwen/Qwen3-32B
-          command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "wsgi:app"]
+          command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "wsgi:app"]
 
 ---
 # Flask API Service
