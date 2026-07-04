@@ -131,7 +131,7 @@ spec:
       targetPort: 6379
 
 ---
-# Flask API Deployment
+# API Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -158,9 +158,7 @@ spec:
           env:
             - name: DATABASE_URL
               value: postgresql://postgres:postgres@postgres:5432/smartplymouth
-            - name: CELERY_BROKER_URL
-              value: redis://redis:6379/0
-            - name: CELERY_RESULT_BACKEND
+            - name: REDIS_URL
               value: redis://redis:6379/0
             - name: SECRET_KEY
               value: change-me-in-production
@@ -173,10 +171,10 @@ spec:
                   key: token
             - name: LLM_MODEL
               value: Qwen/Qwen3-32B
-          command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "wsgi:app"]
+          command: ["/bin/api"]
 
 ---
-# Flask API Service
+# API Service
 apiVersion: v1
 kind: Service
 metadata:
@@ -191,34 +189,32 @@ spec:
       targetPort: 5000
 
 ---
-# Celery Worker Deployment
+# Worker Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: celery-worker
+  name: worker
   namespace: smartplymouth
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: celery-worker
+      app: worker
   template:
     metadata:
       labels:
-        app: celery-worker
+        app: worker
     spec:
       imagePullSecrets:
         - name: regcred
       containers:
-        - name: celery-worker
+        - name: worker
           image: registry.robertputt.technology/smartplymouth/backend:latest
           imagePullPolicy: Always
           env:
             - name: DATABASE_URL
               value: postgresql://postgres:postgres@postgres:5432/smartplymouth
-            - name: CELERY_BROKER_URL
-              value: redis://redis:6379/0
-            - name: CELERY_RESULT_BACKEND
+            - name: REDIS_URL
               value: redis://redis:6379/0
             - name: NSCALE_BASE_URL
               value: https://inference.api.nscale.com/v1
@@ -231,86 +227,37 @@ spec:
               value: Qwen/Qwen3-32B
             - name: EMBEDDING_MODEL
               value: Qwen/Qwen3-Embedding-8B
-          command: ["celery", "-A", "app.celery_app.celery", "worker", "--loglevel=info", "--concurrency=4"]
+            - name: WORKER_CONCURRENCY
+              value: "4"
+          command: ["/bin/worker"]
 
 ---
-# Celery Flower Deployment
+# Scheduler Deployment (replaces Celery Beat)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: celery-flower
+  name: scheduler
   namespace: smartplymouth
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: celery-flower
+      app: scheduler
   template:
     metadata:
       labels:
-        app: celery-flower
+        app: scheduler
     spec:
       imagePullSecrets:
         - name: regcred
       containers:
-        - name: celery-flower
-          image: registry.robertputt.technology/smartplymouth/backend:latest
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 5555
-          env:
-            - name: CELERY_BROKER_URL
-              value: redis://redis:6379/0
-            - name: CELERY_RESULT_BACKEND
-              value: redis://redis:6379/0
-          command: ["celery", "-A", "app.celery_app.celery", "flower", "--port=5555"]
-
----
-# Celery Flower Service
-apiVersion: v1
-kind: Service
-metadata:
-  name: celery-flower
-  namespace: smartplymouth
-spec:
-  type: LoadBalancer
-  selector:
-    app: celery-flower
-  ports:
-    - port: 5555
-      targetPort: 5555
-
----
-# Celery Beat Deployment (scheduler)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: celery-beat
-  namespace: smartplymouth
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: celery-beat
-  template:
-    metadata:
-      labels:
-        app: celery-beat
-    spec:
-      imagePullSecrets:
-        - name: regcred
-      containers:
-        - name: celery-beat
+        - name: scheduler
           image: registry.robertputt.technology/smartplymouth/backend:latest
           imagePullPolicy: Always
           env:
-            - name: DATABASE_URL
-              value: postgresql://postgres:postgres@postgres:5432/smartplymouth
-            - name: CELERY_BROKER_URL
+            - name: REDIS_URL
               value: redis://redis:6379/0
-            - name: CELERY_RESULT_BACKEND
-              value: redis://redis:6379/0
-          command: ["celery", "-A", "app.celery_app.celery", "beat", "--loglevel=info"]
+          command: ["/bin/scheduler"]
 
 ---
 # Database Migration Job
@@ -336,4 +283,4 @@ spec:
           env:
             - name: DATABASE_URL
               value: postgresql://postgres:postgres@postgres:5432/smartplymouth
-          command: ["alembic", "upgrade", "head"]
+          command: ["/bin/migrate", "up"]
