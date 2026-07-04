@@ -99,28 +99,36 @@ func parseWaitTimesPage(doc *goquery.Document) []waitTimeEntry {
 	minutesRe := regexp.MustCompile(`(\d+)\s*minutes`)
 	patientsRe := regexp.MustCompile(`(\d+)\s*patients`)
 
-	// Find all h2 elements that match our known headings
+	// Collect all location h2 elements and their positions in the document
+	type locationH2 struct {
+		selection    *goquery.Selection
+		locationName string
+	}
+
+	var locationH2s []locationH2
 	doc.Find("h2").Each(func(i int, s *goquery.Selection) {
 		heading := strings.TrimSpace(s.Text())
-		locationName, ok := headingToLocation[heading]
-		if !ok {
-			return
+		if name, ok := headingToLocation[heading]; ok {
+			locationH2s = append(locationH2s, locationH2{
+				selection:    s,
+				locationName: name,
+			})
 		}
+	})
 
-		// Get all text content between this h2 and the next h2
-		var sectionText strings.Builder
-		s.NextUntil("h2").Each(func(_ int, el *goquery.Selection) {
-			sectionText.WriteString(el.Text())
-			sectionText.WriteString(" ")
-		})
-		text := sectionText.String()
+	// For each location h2, find the closest ancestor that wraps just this
+	// location's section. The page uses a container per location — find the
+	// ancestor whose text contains "minutes" or "patients" but is as narrow
+	// as possible (i.e. doesn't contain another location's h2).
+	for _, loc := range locationH2s {
+		sectionText := extractSectionText(loc.selection, doc)
 
 		longestWait := 0
-		if matches := minutesRe.FindStringSubmatch(text); len(matches) > 1 {
+		if matches := minutesRe.FindStringSubmatch(sectionText); len(matches) > 1 {
 			longestWait, _ = strconv.Atoi(matches[1])
 		}
 
-		patientMatches := patientsRe.FindAllStringSubmatch(text, -1)
+		patientMatches := patientsRe.FindAllStringSubmatch(sectionText, -1)
 		patientsWaiting := 0
 		patientsInDept := 0
 		if len(patientMatches) > 0 {
@@ -131,15 +139,48 @@ func parseWaitTimesPage(doc *goquery.Document) []waitTimeEntry {
 		}
 
 		entries = append(entries, waitTimeEntry{
-			LocationName:         locationName,
+			LocationName:         loc.locationName,
 			LongestWait:          longestWait,
 			PatientsWaiting:      patientsWaiting,
 			PatientsInDepartment: patientsInDept,
 		})
 
 		log.Printf("Parsed %s: wait=%dmin, waiting=%d, in_dept=%d",
-			locationName, longestWait, patientsWaiting, patientsInDept)
-	})
+			loc.locationName, longestWait, patientsWaiting, patientsInDept)
+	}
 
 	return entries
+}
+
+// extractSectionText finds the narrowest ancestor of the h2 that contains
+// the stats data (minutes/patients text) without containing another h2 from
+// our known set. This replicates the Python approach of walking forward through
+// document nodes until hitting the next location heading.
+func extractSectionText(h2 *goquery.Selection, doc *goquery.Document) string {
+	// Strategy: walk up the ancestor chain from the h2. At each level, check
+	// if the ancestor's text contains "patients" (our data marker) and count
+	// how many of our known-location h2s are inside it. We want the smallest
+	// ancestor that has our data and contains exactly one of our location h2s.
+	current := h2.Parent()
+	for current.Length() > 0 {
+		text := current.Text()
+		if strings.Contains(text, "patients") {
+			// Count how many known-location h2s are inside this element
+			h2Count := 0
+			current.Find("h2").Each(func(_ int, s *goquery.Selection) {
+				heading := strings.TrimSpace(s.Text())
+				if _, ok := headingToLocation[heading]; ok {
+					h2Count++
+				}
+			})
+			if h2Count == 1 {
+				return text
+			}
+		}
+		current = current.Parent()
+	}
+
+	// Fallback: use the h2's parent text (may include some noise but should
+	// still match our regexes)
+	return h2.Parent().Text()
 }
