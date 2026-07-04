@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"os/exec"
@@ -54,6 +55,7 @@ func NewAnalysePlanningHandler(db *gorm.DB, cfg *config.Config) func(context.Con
 
 		httpClient := &http.Client{
 			Timeout: 60 * time.Second,
+			Jar:     newCookieJar(),
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			},
@@ -176,9 +178,6 @@ func getApplicationKeyVal(reference string, client *http.Client) (string, error)
 	postReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	postReq.Header.Set("Referer", formURL)
 	postReq.Header.Set("Origin", "https://planning.plymouth.gov.uk")
-	for _, cookie := range resp.Cookies() {
-		postReq.AddCookie(cookie)
-	}
 
 	postResp, err := client.Do(postReq)
 	if err != nil {
@@ -296,6 +295,12 @@ func downloadDocuments(keyVal string, client *http.Client, downloadDir string) [
 		}
 		defer docResp.Body.Close()
 
+		// Skip non-200 responses (redirects to login, 403s, etc.)
+		if docResp.StatusCode != 200 {
+			log.Printf("Document download returned status %d for %s", docResp.StatusCode, docURL)
+			return
+		}
+
 		if !strings.Contains(sanitized, ".") {
 			ct := docResp.Header.Get("Content-Type")
 			switch {
@@ -341,10 +346,26 @@ func extractTextFromPDF(fpath string) string {
 	// Use pdftotext (poppler-utils) which is highly tolerant of malformed PDFs.
 	// The "-" argument tells it to write to stdout instead of a file.
 	cmd := exec.Command("pdftotext", "-enc", "UTF-8", "-nopgbrk", fpath, "-")
-	out, err := cmd.Output()
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	text := strings.TrimSpace(stdout.String())
+
 	if err != nil {
-		log.Printf("pdftotext failed for %s: %v", fpath, err)
-		return ""
+		// pdftotext exits non-zero for image-only PDFs or minor issues but may
+		// still produce partial output. Only log at debug level since many
+		// planning documents are scanned drawings with no extractable text.
+		if text == "" {
+			log.Printf("pdftotext: no text extracted from %s (likely image-only PDF)", filepath.Base(fpath))
+		}
 	}
-	return string(out)
+
+	return text
+}
+
+func newCookieJar() http.CookieJar {
+	jar, _ := cookiejar.New(nil)
+	return jar
 }
