@@ -1,68 +1,44 @@
-FROM python:3.12-slim
+# Build stage
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-# Install system dependencies for psycopg2 and native builds
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev gcc libffi-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Install build dependencies
+RUN apk add --no-cache gcc musl-dev
 
-# Install Python dependencies in smaller layers to stay under 100MB per layer
+# Copy go mod files and download dependencies
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Core web framework and database
-RUN pip install --no-cache-dir \
-    Flask==3.1.0 \
-    Flask-Cors==5.0.1 \
-    Flask-SQLAlchemy==3.1.1 \
-    SQLAlchemy==2.0.36 \
-    alembic==1.14.1 \
-    psycopg2-binary==2.9.10 \
-    gunicorn==23.0.0
+# Copy source code
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 
-# Task queue and utilities
-RUN pip install --no-cache-dir \
-    celery[redis]==5.4.0 \
-    redis==5.2.1 \
-    flower==2.0.1 \
-    requests==2.32.5 \
-    beautifulsoup4==4.12.3 \
-    pypdf==5.4.0 \
-    cryptography==44.0.3
+# Build all binaries
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/worker ./cmd/worker
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/scheduler ./cmd/scheduler
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/migrate ./cmd/migrate
 
-# LangChain core and OpenAI-compatible client
-RUN pip install --no-cache-dir \
-    langchain-core==1.4.1 \
-    langchain-openai==1.1.1
+# Runtime stage
+FROM alpine:3.20
 
-# ChromaDB heavy dependencies split across layers to stay under 100MB each
-RUN pip install --no-cache-dir \
-    numpy==2.2.6
+RUN apk add --no-cache ca-certificates tzdata
 
-RUN pip install --no-cache-dir \
-    onnxruntime==1.22.0
+WORKDIR /app
 
-RUN pip install --no-cache-dir \
-    chromadb==1.5.9
+# Copy binaries from builder
+COPY --from=builder /bin/api /bin/api
+COPY --from=builder /bin/worker /bin/worker
+COPY --from=builder /bin/scheduler /bin/scheduler
+COPY --from=builder /bin/migrate /bin/migrate
 
-# LangChain integrations
-RUN pip install --no-cache-dir \
-    langchain-chroma==1.1.0 \
-    langchain-community==0.4.2 \
-    langchain-text-splitters==1.1.2
-
-# Copy application code
-COPY app/ ./app/
-COPY migrations/ ./migrations/
-COPY scripts/ ./scripts/
-COPY wsgi.py alembic.ini ./
-
-# Copy vectorstore as a separate layer
+# Copy vectorstore data
 COPY data/policy_vectorstore/ ./data/policy_vectorstore/
 
-ENV FLASK_APP=wsgi.py
-ENV PYTHONUNBUFFERED=1
+ENV TZ=Europe/London
 
 EXPOSE 5000
 
-# Default entrypoint runs the API via gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "wsgi:app"]
+# Default entrypoint runs the API
+CMD ["/bin/api"]
