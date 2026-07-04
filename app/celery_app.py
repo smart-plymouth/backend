@@ -14,12 +14,6 @@ celery.conf.update(
     result_serializer="json",
     timezone="Europe/London",
     enable_utc=True,
-    # Route AI analysis tasks to a dedicated queue with concurrency=1
-    task_routes={
-        "app.blueprints.planning.tasks.analyse_planning_application": {
-            "queue": "planning_analysis",
-        },
-    },
     beat_schedule={
         "fetch-wait-times-every-5-minutes": {
             "task": "app.blueprints.emergency_wait_times.tasks.fetch_wait_times",

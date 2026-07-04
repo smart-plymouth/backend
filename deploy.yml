@@ -220,38 +220,6 @@ spec:
               value: redis://redis:6379/0
             - name: CELERY_RESULT_BACKEND
               value: redis://redis:6379/0
-          command: ["celery", "-A", "app.celery_app.celery", "worker", "--loglevel=info", "--concurrency=2"]
-
----
-# Celery Planning Analysis Worker Deployment (concurrency=1)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: celery-worker-planning-analysis
-  namespace: smartplymouth
-spec:
-  replicas: 1 
-  selector:
-    matchLabels:
-      app: celery-worker-planning-analysis
-  template:
-    metadata:
-      labels:
-        app: celery-worker-planning-analysis
-    spec:
-      imagePullSecrets:
-        - name: regcred
-      containers:
-        - name: celery-worker-planning-analysis
-          image: registry.robertputt.technology/smartplymouth/backend:latest
-          imagePullPolicy: Always
-          env:
-            - name: DATABASE_URL
-              value: postgresql://postgres:postgres@postgres:5432/smartplymouth
-            - name: CELERY_BROKER_URL
-              value: redis://redis:6379/0
-            - name: CELERY_RESULT_BACKEND
-              value: redis://redis:6379/0
             - name: NSCALE_BASE_URL
               value: https://inference.api.nscale.com/v1
             - name: NSCALE_TOKEN
@@ -263,7 +231,7 @@ spec:
               value: Qwen/Qwen3-32B
             - name: EMBEDDING_MODEL
               value: Qwen/Qwen3-Embedding-8B
-          command: ["celery", "-A", "app.celery_app.celery", "worker", "--queues=planning_analysis", "--concurrency=4", "--loglevel=info"]
+          command: ["celery", "-A", "app.celery_app.celery", "worker", "--loglevel=info", "--concurrency=4"]
 
 ---
 # Celery Flower Deployment
