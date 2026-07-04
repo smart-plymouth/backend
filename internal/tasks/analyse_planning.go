@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/hibiken/asynq"
-	"github.com/ledongthuc/pdf"
 	"gorm.io/gorm"
 
 	"github.com/smartplymouth/backend/internal/config"
@@ -338,35 +338,13 @@ func sanitizeFilename(name string) string {
 }
 
 func extractTextFromPDF(fpath string) string {
-	f, err := os.Open(fpath)
+	// Use pdftotext (poppler-utils) which is highly tolerant of malformed PDFs.
+	// The "-" argument tells it to write to stdout instead of a file.
+	cmd := exec.Command("pdftotext", "-enc", "UTF-8", "-nopgbrk", fpath, "-")
+	out, err := cmd.Output()
 	if err != nil {
+		log.Printf("pdftotext failed for %s: %v", fpath, err)
 		return ""
 	}
-	defer f.Close()
-
-	stat, err := f.Stat()
-	if err != nil {
-		return ""
-	}
-
-	reader, err := pdf.NewReader(f, stat.Size())
-	if err != nil {
-		log.Printf("Failed to read PDF %s: %v", fpath, err)
-		return ""
-	}
-
-	var text strings.Builder
-	for i := 1; i <= reader.NumPage(); i++ {
-		page := reader.Page(i)
-		if page.V.IsNull() {
-			continue
-		}
-		content, err := page.GetPlainText(nil)
-		if err != nil {
-			continue
-		}
-		text.WriteString(content)
-		text.WriteString("\n")
-	}
-	return text.String()
+	return string(out)
 }
