@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -27,12 +28,13 @@ func RegisterPlanning(r *chi.Mux, db *gorm.DB, client *taskqueue.Client, cfg *co
 		r.Get("/cases", listCases(db))
 		r.Get("/cases/*", func(w http.ResponseWriter, r *http.Request) {
 			// Handle sub-routes with reference containing slashes
-			path := chi.URLParam(r, "*")
+			rawPath := chi.URLParam(r, "*")
+			path, _ := url.PathUnescape(rawPath)
 			parts := strings.Split(path, "/")
 
 			// Determine if this is /cases/{ref} or /cases/{ref}/action
+			// Actions are known keywords that cannot appear as the final segment of a reference
 			if len(parts) >= 3 {
-				// /cases/XX/XXXXX/XXX/action
 				lastPart := parts[len(parts)-1]
 				switch lastPart {
 				case "analyse":
@@ -54,13 +56,14 @@ func RegisterPlanning(r *chi.Mux, db *gorm.DB, client *taskqueue.Client, cfg *co
 				}
 			}
 
-			// Otherwise it's just /cases/{reference}
+			// It's /cases/{reference} (reference may contain slashes)
 			reference := path
 			getCase(db, reference, w)
 		})
 		r.Post("/refresh", triggerRefresh(client))
 		r.Post("/cases/*", func(w http.ResponseWriter, r *http.Request) {
-			path := chi.URLParam(r, "*")
+			rawPath := chi.URLParam(r, "*")
+			path, _ := url.PathUnescape(rawPath)
 			parts := strings.Split(path, "/")
 
 			if len(parts) >= 3 {
