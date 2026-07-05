@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/hibiken/asynq"
@@ -332,9 +333,9 @@ func parseResults(htmlPages []string) []parsedCase {
 
 			cases = append(cases, parsedCase{
 				Reference:     reference,
-				Address:       address,
-				Proposal:      proposal,
-				Status:        status,
+				Address:       sanitizeUTF8(address),
+				Proposal:      sanitizeUTF8(proposal),
+				Status:        sanitizeUTF8(status),
 				ReceivedDate:  receivedDate,
 				ValidatedDate: validatedDate,
 			})
@@ -352,4 +353,38 @@ func parseDateUK(dateStr string) *time.Time {
 		}
 	}
 	return nil
+}
+
+// sanitizeUTF8 replaces invalid UTF-8 bytes with their nearest valid equivalent.
+// Specifically handles Latin-1/Windows-1252 bytes (like 0xa0 non-breaking space)
+// that appear in HTML scraped from the planning portal.
+func sanitizeUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+
+	// Replace byte-by-byte: valid UTF-8 sequences pass through,
+	// invalid single bytes are treated as Latin-1 and converted to their
+	// Unicode equivalents (e.g. 0xa0 -> U+00A0 non-breaking space -> regular space).
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			// Invalid byte — treat as Latin-1 code point
+			cp := rune(s[i])
+			if cp == 0xa0 {
+				// Non-breaking space -> regular space
+				b.WriteByte(' ')
+			} else {
+				// Write the Latin-1 character as its Unicode equivalent
+				b.WriteRune(cp)
+			}
+			i++
+		} else {
+			b.WriteRune(r)
+			i += size
+		}
+	}
+	return b.String()
 }
