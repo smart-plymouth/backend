@@ -122,6 +122,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/RefreshTaskAccepted"
 
+  /phaseten_email:
+    post:
+      summary: Register an email address for Phase 10 notifications
+      description: |
+        Submits an email address to be stored for Phase 10 planning
+        notifications. The email must be a valid format. Duplicate
+        submissions are rejected with a 409 Conflict.
+      operationId: submitPhasetenEmail
+      tags:
+        - Phase 10
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhasetenEmailRequest"
+      responses:
+        "201":
+          description: Email address registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhasetenEmailResponse"
+        "400":
+          description: Invalid or missing email address
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Email address already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /cases/{reference}:
     get:
       summary: Get a single planning case
@@ -575,3 +611,35 @@ components:
         - first_name
         - last_name
         - letter_type
+
+    PhasetenEmailRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email address to register for Phase 10 notifications
+          example: "jane.smith@example.com"
+      required:
+        - email
+
+    PhasetenEmailResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Registration status
+          example: "registered"
+        id:
+          type: integer
+          description: Unique identifier for the registration
+          example: 1
+        email:
+          type: string
+          format: email
+          description: The registered email address
+          example: "jane.smith@example.com"
+      required:
+        - status
+        - id
+        - email

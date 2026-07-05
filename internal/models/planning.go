@@ -103,3 +103,13 @@ type PlanningSupport struct {
 func (PlanningSupport) TableName() string {
 	return "planning_supports"
 }
+
+type PlanningPhasetenEmail struct {
+	ID        int       `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	Email     string    `gorm:"column:email;type:varchar(255);not null;uniqueIndex" json:"email"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;autoCreateTime" json:"created_at"`
+}
+
+func (PlanningPhasetenEmail) TableName() string {
+	return "planning_phaseten_emails"
+}

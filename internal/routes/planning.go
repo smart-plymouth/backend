@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"strings"
 	"time"
@@ -61,6 +62,7 @@ func RegisterPlanning(r *chi.Mux, db *gorm.DB, client *taskqueue.Client, cfg *co
 			getCase(db, reference, w)
 		})
 		r.Post("/refresh", triggerRefresh(client))
+		r.Post("/phaseten_email", submitPhasetenEmail(db))
 		r.Post("/cases/*", func(w http.ResponseWriter, r *http.Request) {
 			rawPath := chi.URLParam(r, "*")
 			path, _ := url.PathUnescape(rawPath)
@@ -442,4 +444,51 @@ func queryInt(r *http.Request, key string, defaultVal int) int {
 		return defaultVal
 	}
 	return n
+}
+
+func submitPhasetenEmail(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var reqBody struct {
+			Email string `json:"email"`
+		}
+
+		body, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(body, &reqBody); err != nil || len(body) == 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Request body must be JSON"})
+			return
+		}
+
+		email := strings.TrimSpace(reqBody.Email)
+		if email == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email is required"})
+			return
+		}
+
+		// Validate email format using net/mail
+		_, err := mail.ParseAddress(email)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid email address format"})
+			return
+		}
+
+		record := models.PlanningPhasetenEmail{
+			Email: email,
+		}
+
+		if err := db.Create(&record).Error; err != nil {
+			// Check for unique constraint violation
+			if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "Email address already registered"})
+				return
+			}
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to store email"})
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"status": "registered",
+			"id":     record.ID,
+			"email":  record.Email,
+		})
+	}
 }
