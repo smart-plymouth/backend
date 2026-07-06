@@ -17,6 +17,7 @@ import (
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 
+	"github.com/smartplymouth/backend/internal/config"
 	"github.com/smartplymouth/backend/internal/models"
 )
 
@@ -30,7 +31,7 @@ type fetchWeeklyPayload struct {
 	WeekStartISO string `json:"week_start_iso,omitempty"`
 }
 
-func NewFetchWeeklyPlanningHandler(db *gorm.DB) func(context.Context, *asynq.Task) error {
+func NewFetchWeeklyPlanningHandler(db *gorm.DB, cfg *config.Config) func(context.Context, *asynq.Task) error {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var payload fetchWeeklyPayload
 		if t.Payload() != nil {
@@ -128,16 +129,18 @@ func NewFetchWeeklyPlanningHandler(db *gorm.DB) func(context.Context, *asynq.Tas
 
 		// Queue AI analysis for new and unanalysed cases
 		analysisRefs := append(newRefs, unanalysedRefs...)
-		for _, ref := range analysisRefs {
-			payload, _ := json.Marshal(map[string]string{"reference": ref})
-			task := asynq.NewTask(TypeAnalysePlanningApplication, payload)
-			// Use the same Redis connection via asynq client
-			// Note: In production this would use the injected client
-			// For now we just log it - the API layer handles enqueueing
-			_ = task
-		}
-
 		if len(analysisRefs) > 0 {
+			enqueueClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr()})
+			defer enqueueClient.Close()
+
+			for _, ref := range analysisRefs {
+				payload, _ := json.Marshal(map[string]string{"reference": ref})
+				task := asynq.NewTask(TypeAnalysePlanningApplication, payload)
+				if _, err := enqueueClient.Enqueue(task); err != nil {
+					log.Printf("Failed to enqueue analysis for %s: %v", ref, err)
+				}
+			}
+
 			log.Printf("Queued AI analysis for %d new and %d unanalysed existing cases",
 				len(newRefs), len(unanalysedRefs))
 		}

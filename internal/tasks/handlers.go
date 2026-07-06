@@ -11,7 +11,7 @@ import (
 
 func RegisterHandlers(mux *asynq.ServeMux, db *gorm.DB, cfg *config.Config) {
 	mux.HandleFunc(TypeFetchWaitTimes, NewFetchWaitTimesHandler(db))
-	mux.HandleFunc(TypeFetchWeeklyPlanning, NewFetchWeeklyPlanningHandler(db))
+	mux.HandleFunc(TypeFetchWeeklyPlanning, NewFetchWeeklyPlanningHandler(db, cfg))
 	mux.HandleFunc(TypeRefreshPlanningApplications, NewRefreshPlanningHandler(db, cfg))
 	mux.HandleFunc(TypeAnalysePlanningApplication, NewAnalysePlanningHandler(db, cfg))
 	mux.HandleFunc(TypeExampleTask, func(ctx context.Context, t *asynq.Task) error {
