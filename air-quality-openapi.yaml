@@ -1,0 +1,311 @@
+openapi: 3.0.3
+info:
+  title: Air Quality Monitoring API
+  description: |
+    API for querying air quality monitoring data across sites in the Plymouth area.
+    Provides read-only access to monitoring sites, readings, and pollutant metrics.
+  version: "1.0"
+  contact:
+    name: SmartPlymouth
+servers:
+  - url: https://api.smartplymouth.org/api/air-quality/v1.0
+    description: Production
+
+paths:
+  /sites:
+    get:
+      summary: List air quality monitoring sites
+      description: Returns all registered air quality monitoring sites.
+      operationId: listSites
+      tags:
+        - Sites
+      responses:
+        "200":
+          description: List of air quality monitoring sites
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SitesList"
+
+  /sites/{site_id}:
+    get:
+      summary: Get a single monitoring site
+      description: Returns details of a specific air quality monitoring site.
+      operationId: getSite
+      tags:
+        - Sites
+      parameters:
+        - $ref: "#/components/parameters/SiteId"
+      responses:
+        "200":
+          description: Site details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AirQualitySite"
+        "400":
+          description: Invalid site_id format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Site not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /readings:
+    get:
+      summary: List air quality readings
+      description: |
+        Returns a paginated list of air quality readings with optional filtering
+        by site, date range, and pollutant type. The date range must not exceed 31 days.
+      operationId: listReadings
+      tags:
+        - Readings
+      parameters:
+        - name: site_id
+          in: query
+          required: false
+          description: Filter readings to a specific monitoring site.
+          schema:
+            type: string
+            format: uuid
+            example: "b4c2d5e6-f7a8-9012-bcde-fa2345678901"
+        - name: from_date
+          in: query
+          required: false
+          description: Start of date range filter (inclusive). YYYY-MM-DD format.
+          schema:
+            type: string
+            format: date
+            example: "2026-06-01"
+        - name: to_date
+          in: query
+          required: false
+          description: End of date range filter (inclusive). YYYY-MM-DD format.
+          schema:
+            type: string
+            format: date
+            example: "2026-06-07"
+        - name: pollutant
+          in: query
+          required: false
+          description: Filter readings that contain a specific pollutant type (e.g. PM2.5, PM10, NOx, NO2, O3, SO2).
+          schema:
+            type: string
+            example: "PM2.5"
+        - name: page
+          in: query
+          required: false
+          description: Page number (1-indexed).
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+            example: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100).
+          schema:
+            type: integer
+            default: 25
+            minimum: 1
+            maximum: 100
+            example: 25
+      responses:
+        "200":
+          description: A paginated list of air quality readings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedReadings"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /readings/{reading_id}:
+    get:
+      summary: Get a single reading with metrics
+      description: Returns a specific air quality reading with all associated pollutant metrics.
+      operationId: getReading
+      tags:
+        - Readings
+      parameters:
+        - name: reading_id
+          in: path
+          required: true
+          description: The auto-incrementing ID of the reading.
+          schema:
+            type: integer
+            example: 42
+      responses:
+        "200":
+          description: Reading details with metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AirQualityReading"
+        "400":
+          description: Invalid reading_id format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Reading not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  parameters:
+    SiteId:
+      name: site_id
+      in: path
+      required: true
+      description: UUID of the air quality monitoring site.
+      schema:
+        type: string
+        format: uuid
+        example: "b4c2d5e6-f7a8-9012-bcde-fa2345678901"
+
+  schemas:
+    AirQualitySite:
+      type: object
+      properties:
+        site_id:
+          type: string
+          format: uuid
+          description: Unique identifier for the monitoring site
+          example: "b4c2d5e6-f7a8-9012-bcde-fa2345678901"
+        name:
+          type: string
+          description: Human-readable name of the site
+          example: "Plymouth City Centre"
+        latitude:
+          type: number
+          format: double
+          description: Latitude of the monitoring station
+          example: 50.3715
+        longitude:
+          type: number
+          format: double
+          description: Longitude of the monitoring station
+          example: -4.1426
+      required:
+        - site_id
+        - name
+        - latitude
+        - longitude
+
+    AirQualityMetric:
+      type: object
+      properties:
+        metric_id:
+          type: integer
+          description: Unique identifier for the metric
+          example: 101
+        pollutant:
+          type: string
+          description: Pollutant or reading type (e.g. PM1, PM2.5, PM10, NOx, NO2, O3, SO2)
+          example: "PM2.5"
+        value:
+          type: number
+          format: double
+          description: The measured value
+          example: 12.5
+        unit:
+          type: string
+          description: Unit of measurement
+          example: "µg/m³"
+      required:
+        - metric_id
+        - pollutant
+        - value
+        - unit
+
+    AirQualityReading:
+      type: object
+      properties:
+        reading_id:
+          type: integer
+          description: Unique identifier for the reading
+          example: 42
+        site_id:
+          type: string
+          format: uuid
+          description: Monitoring site where the reading was taken
+          example: "b4c2d5e6-f7a8-9012-bcde-fa2345678901"
+        datetime:
+          type: string
+          format: date-time
+          description: Timestamp of the reading
+          example: "2026-06-05T14:00:00+00:00"
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/AirQualityMetric"
+          description: Pollutant metrics recorded in this reading
+      required:
+        - reading_id
+        - site_id
+        - datetime
+        - metrics
+
+    SitesList:
+      type: object
+      properties:
+        sites:
+          type: array
+          items:
+            $ref: "#/components/schemas/AirQualitySite"
+      required:
+        - sites
+
+    PaginatedReadings:
+      type: object
+      properties:
+        readings:
+          type: array
+          items:
+            $ref: "#/components/schemas/AirQualityReading"
+        total:
+          type: integer
+          description: Total number of matching readings
+          example: 256
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        pages:
+          type: integer
+          description: Total number of pages
+          example: 11
+        per_page:
+          type: integer
+          description: Results per page
+          example: 25
+      required:
+        - readings
+        - total
+        - page
+        - pages
+        - per_page
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "Invalid site_id format."
+      required:
+        - error

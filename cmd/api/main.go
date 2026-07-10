@@ -44,6 +44,7 @@ func main() {
 	routes.RegisterEmergencyWaitTimes(r, db)
 	routes.RegisterPlanning(r, db, client, cfg)
 	routes.RegisterBirdMonitoring(r, db)
+	routes.RegisterAirQuality(r, db)
 
 	port := os.Getenv("PORT")
 	if port == "" {
