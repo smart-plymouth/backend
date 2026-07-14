@@ -3,6 +3,7 @@ module github.com/smartplymouth/backend
 go 1.23
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/PuerkitoBio/goquery v1.9.2
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-chi/cors v1.2.1
@@ -10,7 +11,7 @@ require (
 	github.com/hibiken/asynq v0.25.1
 	github.com/sashabaranov/go-openai v1.36.1
 	gorm.io/driver/postgres v1.5.11
-	gorm.io/gorm v1.25.12
+	gorm.io/gorm v1.30.0
 )
 
 require (
