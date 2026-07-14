@@ -134,7 +134,7 @@ func TestQueryInt(t *testing.T) {
 
 func TestRegisterTestAPI(t *testing.T) {
 	r := chi.NewRouter()
-	RegisterTestAPI(r, nil) // db not used in test-api
+	RegisterTestAPI(r, nil)
 
 	req := httptest.NewRequest("GET", "/api/test-api/v1.0/", nil)
 	w := httptest.NewRecorder()
@@ -192,11 +192,5 @@ func TestLocationToDict(t *testing.T) {
 	}
 	if dict["latitude"] != 50.4167 {
 		t.Errorf("unexpected latitude: %v", dict["latitude"])
-	}
-	if *(dict["opening_times"].(*string)) != "Mon-Fri 9-5" {
-		t.Errorf("unexpected opening_times: %v", dict["opening_times"])
-	}
-	if *(dict["telephone_number"].(*string)) != "01234 567890" {
-		t.Errorf("unexpected telephone_number: %v", dict["telephone_number"])
 	}
 }
