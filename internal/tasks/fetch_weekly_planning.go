@@ -165,11 +165,28 @@ func getPreviousWeekMonday(now time.Time) time.Time {
 func fetchAllPages(weekStart time.Time, client *http.Client) ([]string, error) {
 	var allHTML []string
 
-	html, err := fetchWeeklyListPage(weekStart, client)
+	// Fetch by validated date
+	html, err := fetchWeeklyListPage(weekStart, client, "DC_Validated")
 	if err != nil {
 		return nil, err
 	}
 	allHTML = append(allHTML, html)
+	allHTML = append(allHTML, fetchRemainingPages(html, client)...)
+
+	// Also fetch by received date to catch applications not yet validated
+	htmlReceived, err := fetchWeeklyListPage(weekStart, client, "DC_Received")
+	if err != nil {
+		log.Printf("Warning: failed to fetch by received date: %v", err)
+	} else {
+		allHTML = append(allHTML, htmlReceived)
+		allHTML = append(allHTML, fetchRemainingPages(htmlReceived, client)...)
+	}
+
+	return allHTML, nil
+}
+
+func fetchRemainingPages(html string, client *http.Client) []string {
+	var pages []string
 
 	page := 2
 	for {
@@ -200,7 +217,7 @@ func fetchAllPages(weekStart time.Time, client *http.Client) ([]string, error) {
 		}
 		html2, _ := doc2.Html()
 		html = html2
-		allHTML = append(allHTML, html2)
+		pages = append(pages, html2)
 		page++
 
 		if page > 50 {
@@ -209,10 +226,11 @@ func fetchAllPages(weekStart time.Time, client *http.Client) ([]string, error) {
 		}
 	}
 
-	return allHTML, nil
+	return pages
 }
 
-func fetchWeeklyListPage(weekStart time.Time, client *http.Client) (string, error) {
+
+func fetchWeeklyListPage(weekStart time.Time, client *http.Client, dateType string) (string, error) {
 	// Step 1: GET the form page
 	formURL := weeklyListURL + "?action=weeklyList"
 	req, _ := http.NewRequest("GET", formURL, nil)
@@ -239,7 +257,7 @@ func fetchWeeklyListPage(weekStart time.Time, client *http.Client) (string, erro
 		"_csrf":                {csrfToken},
 		"searchCriteria.ward": {""},
 		"week":                {weekStart.Format("02 Jan 2006")},
-		"dateType":            {"DC_Validated"},
+		"dateType":            {dateType},
 		"searchType":          {"Application"},
 	}
 
